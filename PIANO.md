@@ -453,6 +453,7 @@ Stack: Python 3.11+, SQLite (basta e si copia con un `scp`), APScheduler o loop 
 - **Sicurezza chiavi:** solo variabili d'ambiente; `.env` e `config.json` nel `.gitignore`; l'agent wallet non può prelevare; il wallet principale contiene solo il capitale di trading; 2FA sull'exchange di on‑ramp; nessuna chiave nei log e nei prompt.
 - **Operatività:** NTP, timezone UTC, riavvio automatico (systemd/Docker `restart: unless-stopped`) con riconciliazione all'avvio; backup giornaliero del DB.
 - **Rate limit:** ≤ 100 "peso"/ciclo sul limite di 1.200/min; backoff esponenziale su 429; un solo processo per indirizzo.
+- **Pre‑mortem completo:** errori previsti, rilevazione, prevenzione, reazione automatica, test e runbook sono in [ERRORI-E-SOLUZIONI.md](ERRORI-E-SOLUZIONI.md). Tre scelte tecniche che ne derivano e che vanno nel codice dalla fase 1: `cloid` deterministico su ogni ordine, ingresso + stop + target nello stesso batch (`grouping="normalTpsl"`), `set_expires_after` su ogni azione firmata.
 
 ---
 
@@ -477,7 +478,23 @@ Stack: Python 3.11+, SQLite (basta e si copia con un `scp`), APScheduler o loop 
 
 ---
 
-## 16. Fonti
+## 16. Evoluzione: piattaforma in Rust e interfaccia grafica
+
+**È fattibile**, e conviene prepararsi ora senza cambiare linguaggio subito.
+
+| Domanda | Risposta |
+|---|---|
+| Rust ha senso per questo bot? | Per un ciclo orario la velocità di Rust non conta. I vantaggi reali sono tipizzazione forte, un binario unico senza dipendenze a runtime, memoria minima (un VPS da 2 €). Il costo è la velocità di iterazione: nelle prime settimane si cambiano prompt, domande e soglie ogni giorno, e in Python si fa in minuti. |
+| Cosa esiste in Rust | Hyperliquid ha un SDK Rust nella sua organizzazione GitHub (`hyperliquid_rust_sdk`, 116 commit, 31 issue aperte; supporto ai dex HIP‑3 da verificare prima di contarci). Anthropic **non** ha un SDK Rust ufficiale: si usa l'API HTTP con `reqwest` (`POST /v1/messages`, output strutturato con `output_config.format`, caching con `cache_control`). Jev ha SDK solo Python e JavaScript: in Rust si chiama `POST /v1/systemone` direttamente, è un solo endpoint JSON. |
+| Ordine consigliato | 1) Python finché la strategia non è validata (fasi 1–5). 2) Interfaccia grafica come **dashboard web** che legge il log degli eventi: prima in sola lettura, poi con i comandi `pause`/`flat`/`resume` attraverso lo stesso "command bus" usato da Telegram. 3) Rust come riscrittura del **percorso critico** (dati → rischio → esecuzione) in un servizio separato, lasciando a Python l'orchestrazione dei modelli; oppure riscrittura completa, se nel frattempo lo stack Rust di Hyperliquid è maturo. |
+| Interfaccia grafica: con cosa | Fase rapida: una pagina web servita da FastAPI (o Streamlit) con equity, posizioni, ultimi segnali e decisioni, costi API, stato dei kill‑switch. Fase "prodotto": frontend web (React/Svelte) oppure app desktop con **Tauri** (backend Rust + frontend web), che è il punto d'incontro naturale fra le due idee. |
+| Cosa fare **adesso** perché tutto questo sia facile dopo | Architettura "porte e adattatori": interfacce esplicite per `DataSource`, `Analyst` (Claude), `Judge` (Jev/surrogato), `RiskEngine`, `Executor` (live/paper), `Store`. Messaggi fra i moduli in JSON con schema versionato (Pydantic ora, `serde` dopo): lo stato per i modelli, il segnale, la decisione, l'ordine. Log degli eventi come unica fonte di verità, leggibile da qualunque linguaggio. Configurazione in YAML. Nessuna logica di business dentro Telegram o dentro la futura GUI: sono solo client del command bus. |
+
+In pratica: il repository Python che nasce dalla fase 1 è già il "contratto" che una piattaforma Rust o una GUI dovranno rispettare; quando arriverà il momento, si riscrive un modulo alla volta tenendo i test di contratto come rete di sicurezza.
+
+---
+
+## 17. Fonti
 
 **Hyperliquid (verifiche dirette sull'API pubblica il 9/10/2026)**: `perpDexs`, `meta`/`metaAndAssetCtxs` con `dex:"xyz"`, `candleSnapshot` 5m (2–9 ottobre) e 1h (15 marzo – 9 ottobre 2026), `l2Book`, `userFees`; SDK `hyperliquid-python-sdk` 0.24.0 (`perp_dexs`, `name_to_asset`, `market_open`, `update_leverage`, `send_asset`, `approve_agent`, `user_dex_abstraction`).
 - Docs Hyperliquid: [HIP‑3 builder‑deployed perpetuals](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-3-builder-deployed-perpetuals), [Info endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint), [Perpetuals info](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals), [Asset IDs](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids), [Rate limits](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits), [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees), [Error responses](https://hyperliquid.gitbook.io/Hyperliquid-docs/for-developers/api/error-responses), [USDC/bridge](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/usdc), [Account abstraction modes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes.md), [How to start trading](https://hyperliquid.gitbook.io/hyperliquid-docs/onboarding/how-to-start-trading), [Python SDK](https://github.com/hyperliquid-dex/hyperliquid-python-sdk).
