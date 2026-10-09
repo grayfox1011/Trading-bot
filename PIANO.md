@@ -338,6 +338,7 @@ Il codice converte l'analisi in etichette e aggiunge l'età: `"oracle": {"age": 
 Tutti i numeri vengono convertiti dal codice in bucket descrittivi ("tight", "normal", "1.4x average"). Nessun calcolo è lasciato a Jev. L'analisi dell'oracolo è **un campo dello stato**, non un ordine.
 
 ### 7.2 Domande (una sola chiamata, valutate in parallelo)
+La versione di riferimento delle domande, con criteri completi, vocabolario dello stato, soglie della policy e casi di test, è in [`config/questions_v1.yaml`](config/questions_v1.yaml): il bot la carica all'avvio e la traduce negli oggetti dell'SDK, come mostrato qui sotto. Jev riceve solo il JSON risultante.
 ```python
 from typesafe_sdk import TypeSafeClient, Choice, Score, Noul
 import random
@@ -489,6 +490,7 @@ Trading-bot/
 │                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, BOT_MODE=paper|live
 ├── config/
 │   ├── settings.yaml             ← universo, soglie §7.3, limiti §5.2, budget API, finestra oraria, modello segnali
+│   ├── questions_v1.yaml         ← domande a Jev (criteri completi), soglie della policy, casi di test; versionato
 │   └── events.yaml               ← earnings, FOMC, CPI, NFP, festività USA
 ├── src/bot/
 │   ├── main.py                   ← loop scheduler + orchestrazione del ciclo §4

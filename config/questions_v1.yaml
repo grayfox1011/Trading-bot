@@ -1,0 +1,288 @@
+# =============================================================================
+# config/questions_v1.yaml — Domande a Jev (decisore) e soglie della policy
+# =============================================================================
+# Come viene usato questo file:
+#   - lo carica `decision/questions.py` all'avvio; nessuna domanda viene scritta
+#     o modificata a runtime (confrontabilità delle risposte nel tempo);
+#   - ogni voce di `questions` viene tradotta negli oggetti Choice / Score / Noul
+#     di `typesafe-sdk` e inviata come JSON a POST https://api.typesafe.ai/v1/systemone
+#     insieme allo stato (`state.json`, vedi PIANO.md §4.3 e §7.1);
+#   - Jev non legge questo file: riceve solo il JSON risultante;
+#   - istruzioni e criteri sono in inglese (lingua con la migliore accuratezza);
+#   - le modifiche passano da una NUOVA versione del file (questions_v2.yaml),
+#     con changelog e confronto in replay contro la versione precedente.
+#
+# Regole di scrittura seguite (doc TypeSafe, "model jaggedness jev-1.13"):
+#   - Jev legge alla lettera: ogni domanda dice esattamente quali campi guardare
+#     (nomi tra backtick) e cosa significa ogni opzione;
+#   - nessuna aritmetica, nessun conteggio, nessuna data: i numeri arrivano già
+#     trasformati in etichette dal codice (vedi `state_vocabulary`);
+#   - criteri mutuamente esclusivi; per i Noul sia `true` sia `false` descritti;
+#   - le opzioni delle Choice vengono MESCOLATE dal codice ad ogni invio
+#     (bias verso la prima opzione); l'ordine qui sotto è solo documentazione;
+#   - niente doppie negazioni, niente domande a più salti.
+# =============================================================================
+
+meta:
+  version: 1
+  created: 2026-10-09
+  jev_model: jev-1.13.0          # pinnato; il bot allerta se response.model è diverso
+  language: en
+  state_schema_version: 1
+  changelog:
+    - v1: prima bozza, da validare nella fase 3 (test di stabilità + casi limite)
+
+# -----------------------------------------------------------------------------
+# Vocabolario dello stato: etichette che il codice emette per ogni campo.
+# Le domande citano i campi con questi nomi. Se il vocabolario cambia, cambia
+# anche la versione delle domande.
+# -----------------------------------------------------------------------------
+state_vocabulary:
+  symbol: "<TICKER> perpetual"
+  session:
+    - "US regular hours, <N> minutes to close"
+    - "US pre-market (external pricing on)"
+    - "US post-market (external pricing on)"
+    - "overnight (external pricing on, thin liquidity)"
+    - "weekend or holiday (internal pricing, no external price)"
+  trend_1h: "up | down | sideways, plus a short qualifier (e.g. 'price above VWAP and EMA20')"
+  trend_15m: "up | down | sideways, plus the last-3-candles pattern (e.g. 'pullback of 0.4% into EMA20')"
+  momentum: "RSI <n>, one of: overbought | neutral-bullish | neutral | neutral-bearish | oversold"
+  volatility: "ATR <low|normal|high|extreme> (<x>% per hour); 4-hour range <y>%"
+  volume: "last hour volume is <x.x>x the session average"
+  order_book: "spread <tight|normal|wide> (<n> bps), bid depth <vs> ask depth"
+  derivatives: "mark <above|at|below> oracle, funding <neutral|positive|negative|extreme>, open interest <rising|flat|falling>"
+  event_risk:
+    - "no scheduled events in the next <N> hours"
+    - "earnings for this symbol in <N> hours"
+    - "macro release (<FOMC|CPI|NFP>) in <N> minutes"
+  position:
+    - "flat"
+    - "<long|short>, <+/-x.x>R, <N> hours open, stop <x>% away, target <y>% away"
+  oracle:
+    status: "valid | stale | invalidated | missing"
+    age: "fresh (<N> minutes) | aging (<N> minutes)"
+    bias: "bullish | bearish | neutral"
+    scenarios: "up <p>%, range <p>%, down <p>%   (next 4 hours; up = > +0.8%, down = < -0.8%)"
+    levels: "support <x>% below, resistance <y>% above"
+    long_case: "one sentence, English"
+    short_case: "one sentence, English"
+    invalidation: "long case fails <x>% below; short case fails <y>% above"
+    risk_flags: "none | comma-separated list of: event_soon, thin_book, extended_move, funding_extreme, session_edge"
+  recent_performance: "last 3 trades: <+/-x.x>R, <+/-x.x>R, <+/-x.x>R"
+
+# -----------------------------------------------------------------------------
+# Domande. Tutte inviate in UNA chiamata (valutate in parallelo e in modo
+# indipendente: nessuna domanda può vedere la risposta di un'altra).
+# -----------------------------------------------------------------------------
+questions:
+
+  # --- Azione: la decisione vera. Inviata 3 volte (action_1/2/3) con le opzioni
+  #     in ordine diverso; la policy richiede che le tre risposte coincidano.
+  action:
+    type: choice
+    repeat: 3
+    shuffle_options: true
+    instructions: >-
+      You decide for a disciplined intraday trader who holds at most one small
+      position and whose size, stop and risk limits are enforced by code, not by
+      you. Use every field of the state: the quantitative fields (`trend_1h`,
+      `trend_15m`, `momentum`, `volatility`, `volume`, `order_book`,
+      `derivatives`, `event_risk`), the `oracle` block (an analyst's view: it is
+      evidence, not an order) and `position`. Choose the best action for the
+      next 2 to 4 hours. When the evidence is mixed, choose `flat`.
+    criteria:
+      long: >-
+        A long position is justified now: `trend_1h` and `trend_15m` favour
+        higher prices or a completed pullback in an uptrend, the `oracle`
+        long_case agrees with those fields, the long invalidation in
+        `oracle.invalidation` has not been breached, and no field argues
+        against buying. If `position` is already long, this means keep it.
+      short: >-
+        A short position is justified now: `trend_1h` and `trend_15m` favour
+        lower prices or a completed bounce in a downtrend, the `oracle`
+        short_case agrees with those fields, the short invalidation in
+        `oracle.invalidation` has not been breached, and no field argues
+        against selling. If `position` is already short, this means keep it.
+      flat: >-
+        Neither a long nor a short is justified now: the evidence is mixed, or
+        `event_risk`, `volatility`, `order_book` or `session` make a new
+        position unwise, or `oracle.status` is not valid. If `position` is
+        open and the case for it has failed, this means close it.
+
+  # --- Qualità del setup migliore descritto dallo stato (indipendente da action).
+  setup_quality:
+    type: score
+    instructions: >-
+      Rate the quality of the best trading opportunity described by the state,
+      in whichever direction it lies. Judge how many fields agree with each
+      other and with the `oracle` block, how clear the invalidation is, and
+      whether `volume`, `order_book` and `derivatives` support the move. Do not
+      consider risk limits, session or event timing: those are judged elsewhere.
+    criteria:                      # livelli ordinati dal più basso al più alto
+      - "Poor: no coherent case; the quantitative fields contradict each other or the oracle block is missing or invalidated"
+      - "Weak: a case exists but at least one important field (trend on the other timeframe, momentum, volume or derivatives) contradicts it"
+      - "Acceptable: a coherent case with no contradictions and an identifiable invalidation level"
+      - "Good: a coherent case supported by volume, order book and derivatives, with a clear invalidation level and oracle scenarios tilted in its favour"
+      - "Excellent: every field aligned, both timeframes in the same direction, oracle scenarios strongly tilted, strong volume and book support, invalidation level close to the current price"
+
+  # --- Rischio: è accettabile aprire una NUOVA posizione, guardando solo i campi
+  #     di contesto? (non giudica la direzione)
+  risk_ok:
+    type: noul
+    instructions: >-
+      Judge only `session`, `event_risk`, `volatility`, `order_book` and
+      `oracle.risk_flags`. Is opening a new position acceptable from a risk
+      standpoint? Ignore the direction of the trade and ignore `position`.
+    criteria:
+      "true": >-
+        All of the following hold: `session` says external pricing is on,
+        `event_risk` reports no scheduled event within the next 2 hours,
+        `volatility` is low or normal, `order_book` spread is tight or normal
+        with adequate depth on both sides, and `oracle.risk_flags` is none.
+      "false": >-
+        Any of the following holds: `session` says internal pricing (weekend or
+        holiday), `event_risk` reports an event within the next 2 hours,
+        `volatility` is high or extreme, `order_book` spread is wide or depth
+        is thin on either side, or `oracle.risk_flags` lists any flag.
+
+  # --- Uscita anticipata: chiudere ora, prima di stop o target?
+  exit_now:
+    type: noul
+    instructions: >-
+      If `position` is flat, answer false. Otherwise judge whether the open
+      position should be closed now, before its stop or target is reached.
+      Look at `position` (direction and R), `trend_1h`, `trend_15m`,
+      `event_risk` and the `oracle` block.
+    criteria:
+      "true": >-
+        The case for the position has failed: `oracle.status` is invalidated,
+        or the invalidation level for the position's direction in
+        `oracle.invalidation` has been breached, or `trend_1h` and `trend_15m`
+        have both turned against the position, or `event_risk` now reports an
+        event within the next 2 hours.
+      "false": >-
+        The case is intact: at least one of `trend_1h` and `trend_15m` still
+        favours the position, the invalidation level has not been breached,
+        `oracle.status` is valid or stale but not invalidated, and no event is
+        due within the next 2 hours.
+
+  # --- Coerenza dell'oracolo con i dati (audit, non gate).
+  oracle_consistent:
+    type: noul
+    instructions: >-
+      Compare the `oracle` block with the quantitative fields `trend_1h`,
+      `trend_15m`, `momentum`, `volatility`, `volume`, `order_book` and
+      `derivatives`. Judge consistency only. Do not judge whether the oracle
+      will turn out to be right.
+    criteria:
+      "true": >-
+        No quantitative field contradicts the oracle: `oracle.bias` points the
+        same way as the trends, the scenarios in `oracle.scenarios` are tilted
+        in the same direction as the trends or are balanced when the trends are
+        sideways, and the levels and invalidation distances are plausible given
+        `volatility`.
+      "false": >-
+        At least one quantitative field contradicts the oracle: for example
+        `oracle.bias` is bullish while both `trend_1h` and `trend_15m` are
+        down, or the scenarios are tilted up while momentum is oversold and
+        trends are down, or the invalidation distance is smaller than a normal
+        hourly move reported in `volatility`.
+
+  # --- Regime di mercato (usato dalla policy per il target e per il veto su chop).
+  regime:
+    type: choice
+    shuffle_options: true
+    instructions: >-
+      Using `trend_1h`, `trend_15m`, `momentum` and `volatility`, choose the
+      market regime that best describes the state right now.
+    criteria:
+      trend_up: >-
+        `trend_1h` is up and `trend_15m` is up or a pullback inside the
+        uptrend; price is above VWAP and the moving averages.
+      trend_down: >-
+        `trend_1h` is down and `trend_15m` is down or a bounce inside the
+        downtrend; price is below VWAP and the moving averages.
+      range: >-
+        `trend_1h` is sideways, `volatility` is low or normal, and price is
+        moving inside a defined band around VWAP.
+      volatile_chop: >-
+        `volatility` is high or extreme and the two timeframes disagree or
+        change direction frequently; no defined band and no sustained trend.
+
+# -----------------------------------------------------------------------------
+# Policy (codice): soglie iniziali da PIANO.md §7.3, da tarare in paper/backtest.
+# Jev decide la direzione; qui si fissano solo le condizioni di confidenza,
+# l'isteresi e i veti. Le regole di rischio "hard" sono in settings.yaml (§5.2).
+# -----------------------------------------------------------------------------
+policy:
+  open:
+    action_agreement: all          # action_1 == action_2 == action_3
+    action_min_mean_confidence: 0.60
+    setup_quality_min_level: 3     # 1=Poor ... 5=Excellent  (>= Acceptable)
+    setup_quality_min_confidence: 0.50
+    risk_ok_min: 0.70
+    oracle_required_status: [valid]          # stale/invalidated/missing -> nessun ingresso
+    oracle_max_age_minutes: 60
+    oracle_consistent_flag_below: 0.40       # sotto: non blocca, ma marca l'analisi "contestata"
+    regime_rules:
+      volatile_chop: never                   # veto
+      range: target_1R                       # target ridotto a 1 R
+      trend_up: allow
+      trend_down: allow
+    reversal_hysteresis_decisions: 2         # inversione: prima decisione chiude, la seconda apre
+  close:
+    exit_now_min: 0.70
+    exit_now_consecutive_decisions: 2        # 2 decisioni (30 minuti)
+    action_flat_or_opposite_min_mean_confidence: 0.60   # chiusura immediata se le 3 action concordano
+  confidence_definition: >-
+    Per Choice e Score `confidence` è il valore restituito da Jev (1 = tutta la
+    probabilità su un'opzione, 0 = uniforme). Per i Noul si usa direttamente la
+    probabilità `noul`.
+
+# -----------------------------------------------------------------------------
+# Validazione (fase 3). Il file di test costruisce questi stati e verifica le
+# attese; i numeri sono da tarare, le attese qualitative no.
+# -----------------------------------------------------------------------------
+validation:
+  stability_test:
+    states: 50                     # stati registrati reali
+    shuffles_per_state: 3          # ordini diversi delle opzioni
+    min_agreement: 0.90            # stessa risposta su action e regime
+  edge_cases:
+    - name: weekend_internal_pricing
+      state_overrides: {session: "weekend or holiday (internal pricing, no external price)", position: "flat"}
+      expect: {risk_ok: "<= 0.30", action: "flat"}
+    - name: earnings_in_one_hour
+      state_overrides: {event_risk: "earnings for this symbol in 1 hours", position: "flat"}
+      expect: {risk_ok: "<= 0.30"}
+    - name: all_aligned_bullish
+      state_overrides:
+        trend_1h: "up, price above VWAP and EMA20"
+        trend_15m: "up, pullback of 0.3% into EMA20 completed in the last 3 candles"
+        momentum: "RSI 58, neutral-bullish"
+        volatility: "ATR normal (0.5% per hour); 4-hour range 1.4%"
+        volume: "last hour volume is 1.5x the session average"
+        order_book: "spread tight (0.8 bps), bid depth 3x ask depth"
+        derivatives: "mark at oracle, funding neutral, open interest rising"
+        event_risk: "no scheduled events in the next 6 hours"
+        position: "flat"
+        oracle: {status: valid, age: "fresh (10 minutes)", bias: bullish, scenarios: "up 60%, range 28%, down 12%", levels: "support 0.6% below, resistance 1.2% above", long_case: "Trend continuation after a shallow pullback into VWAP with rising volume", short_case: "Only a failure below VWAP would open a short", invalidation: "long case fails 0.7% below; short case fails 1.1% above", risk_flags: none}
+      expect: {action: "long", setup_quality_level: ">= 3", risk_ok: ">= 0.70", oracle_consistent: ">= 0.65"}
+    - name: oracle_contradicts_data
+      state_overrides:
+        trend_1h: "down, price below VWAP and EMA20"
+        trend_15m: "down, new low in the last 3 candles"
+        momentum: "RSI 34, neutral-bearish"
+        oracle: {status: valid, age: "fresh (5 minutes)", bias: bullish, scenarios: "up 65%, range 25%, down 10%", levels: "support 0.4% below, resistance 1.5% above", long_case: "Reversal expected", short_case: "Trend continuation", invalidation: "long case fails 0.5% below; short case fails 1.0% above", risk_flags: none}
+      expect: {oracle_consistent: "<= 0.35"}
+    - name: long_position_case_failed
+      state_overrides:
+        position: "long, -0.6R, 2 hours open, stop 0.3% away, target 1.5% away"
+        trend_1h: "down, price below VWAP"
+        trend_15m: "down, three consecutive lower closes"
+        oracle: {status: invalidated, age: "aging (50 minutes)", bias: bullish, scenarios: "up 55%, range 30%, down 15%", levels: "support 0.6% below, resistance 1.2% above", long_case: "Trend continuation", short_case: "Breakdown below VWAP", invalidation: "long case fails 0.7% below; short case fails 1.1% above", risk_flags: none}
+      expect: {exit_now: ">= 0.70", action: "flat or short"}
+    - name: flat_position_exit_question
+      state_overrides: {position: "flat"}
+      expect: {exit_now: "<= 0.30"}
