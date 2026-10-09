@@ -1,0 +1,31 @@
+# Segreti e configurazioni locali
+.env
+.env.*
+!.env.example
+config.json
+config/*.local.yaml
+
+# Dati, log, database
+*.db
+*.sqlite
+*.sqlite3
+logs/
+data/raw/
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
