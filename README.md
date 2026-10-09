@@ -2,9 +2,9 @@
 
 Bot sperimentale per perpetual su azioni USA del dex HIP-3 `xyz` (trade.xyz) di Hyperliquid, con:
 
-- **Claude Opus 5.5** come "analista": ogni ora (sessione USA) produce un segnale strutturato (direzione, convinzione, tesi, invalidazione);
-- **Jev** (decision model di TypeSafe AI) come "giudice": risponde con probabilità tipizzate (regime, qualità del setup, azione, uscita), anche come "guardia" ogni 15 minuti sulle uscite;
-- **codice deterministico** per dati, feature, sizing, limiti di rischio, esecuzione e veto.
+- **Claude Opus 5.5** come "oracolo": ogni ora (sessione USA) produce un'analisi strutturata (scenari con probabilità, livelli, caso long e caso short, invalidazioni) e **non decide**;
+- **Jev** (decision model di TypeSafe AI) come "decisore": ogni 15 minuti decide azione, ingresso e uscita con probabilità tipizzate, usando lo stato quantitativo e l'analisi dell'oracolo;
+- **codice deterministico** per dati, feature, sizing, limiti di rischio, esecuzione e veto sul solo rischio.
 
 Budget di riferimento: 100 € (~110 USDC). Stato attuale: **fase di pianificazione**.
 

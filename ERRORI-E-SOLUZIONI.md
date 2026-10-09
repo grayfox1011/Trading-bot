@@ -13,7 +13,7 @@
 5. **Un processo, una chiave.** Un solo processo per indirizzo e una chiave agent diversa per ambiente (dev, paper, live): i nonce di Hyperliquid devono essere crescenti per firmatario.
 6. **Il log degli eventi è la verità.** Ogni dato, segnale, decisione, ordine e fill è un evento append‑only (JSONL + SQLite in modalità WAL). Il database si ricostruisce dal log; i report si calcolano dal log.
 7. **Budget guard su tutto.** Perdita giornaliera, settimanale, drawdown, numero di azioni API, costi Claude e Jev: ogni contatore ha una soglia e una reazione automatica.
-8. **Degradazione graduale.** Senza Opus → niente nuovi ingressi. Senza Jev → surrogato a regole con soglie più severe (o niente ingressi, a scelta). Senza dati freschi → niente. Senza rete → i trigger on‑chain proteggono.
+8. **Degradazione graduale.** Senza oracolo (Opus) → niente nuovi ingressi, Jev continua a gestire le uscite. Senza decisore (Jev) → surrogato a regole con soglie più severe (o niente ingressi, a scelta). Senza dati freschi → niente. Senza rete → i trigger on‑chain proteggono.
 9. **Dead‑man switch.** Heartbeat ogni 15 minuti su Telegram e in un file; due heartbeat mancati → alert sul telefono; da telefono `/flat` chiude tutto.
 10. **Il live è difficile da attivare per sbaglio.** `BOT_MODE=live` da solo non basta: serve anche `LIVE_CONFIRM=<indirizzo del wallet>` e un tetto `MAX_EQUITY_USDC` (es. 150). Se l'equity supera il tetto il bot si rifiuta di partire.
 
@@ -56,23 +56,23 @@
 | Cambio di schema dell'API | Campi nuovi, rinominati o mancanti | Modelli Pydantic con `extra="ignore"` e campi obbligatori minimi; healthcheck giornaliero di contratto (lettura) che fallisce rumorosamente |
 | Split, dividendi straordinari, corporate action | Salto > 20 % tra due oracoli consecutivi con book coerente | Pausa sul simbolo + alert; calendario corporate action; nessuna posizione aperta nei giorni di split |
 
-## 3. Claude Opus 5.5 (analista)
+## 3. Claude Opus 5.5 (oracolo)
 
 | Errore previsto | Rilevazione | Prevenzione / reazione |
 |---|---|---|
-| Timeout, 529 "overloaded", 429 | Eccezioni `APITimeoutError`, `InternalServerError`, `RateLimitError` | Timeout 60 s, 2 retry con backoff; poi ciclo senza segnale → nessun nuovo ingresso; posizioni gestite da trigger + guardia Jev |
+| Timeout, 529 "overloaded", 429 | Eccezioni `APITimeoutError`, `InternalServerError`, `RateLimitError` | Timeout 60 s, 2 retry con backoff; poi nessuna analisi valida → nessun nuovo ingresso; le posizioni restano gestite da trigger on‑chain e dalle decisioni di uscita di Jev |
 | Output troncato | `stop_reason == "max_tokens"` (il thinking ha consumato il budget) | `max_tokens` 4000 con effort `low`; un retry a 6000; se ricorre, rivedere il prompt |
-| Refusal | `stop_reason == "refusal"` | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`); se anche il fallback rifiuta → segnale `flat` |
-| JSON non valido o fuori schema | `messages.parse` solleva un errore di validazione | Segnale `flat`, testo grezzo nel log, contatore; 3 errori consecutivi → alert "prompt rotto" |
-| Flip‑flop tra cicli | Direzione che cambia ogni ora | Isteresi: invertire direzione richiede `conviction ≥ 0,7` e conferma Jev; il cooldown dopo una perdita evita il ping‑pong |
-| Numeri inventati o calcoli sbagliati | – | Nessun numero di Claude entra direttamente in size o prezzi; `invalidation_pct` e `target_pct` sono clampati e combinati con l'ATR dal codice |
+| Refusal | `stop_reason == "refusal"` | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`); se anche il fallback rifiuta → nessuna analisi valida per quest'ora |
+| JSON non valido o fuori schema | `messages.parse` solleva un errore di validazione | Nessuna analisi valida (Jev può solo chiudere), testo grezzo nel log, contatore; 3 errori consecutivi → alert "prompt rotto" |
+| Analisi che cambia lettura ogni ora | Bias e scenari che oscillano | L'oracolo non decide: Jev vede l'analisi come un campo dello stato, con la sua età, accanto ai dati quantitativi; invertire una posizione richiede due decisioni Jev concordi a 15 minuti di distanza (isteresi nel codice); il cooldown dopo una perdita evita il ping‑pong |
+| Numeri inventati o calcoli sbagliati | – | Nessun numero dell'oracolo entra direttamente in size o prezzi; le distanze di invalidazione sono clampate e combinate con l'ATR dal codice; le probabilità degli scenari vengono normalizzate |
 | Costi che esplodono | `usage.cache_read_input_tokens == 0` per 3 chiamate; costo giornaliero > budget/22 | Alert "cache persa" (qualcosa di variabile è finito nel prefisso); budget mensile → passaggio automatico a `paper` |
 | Modello deprecato o id errato | HTTP 404 `NotFoundError` | Il modello è un parametro di config; nessun nuovo ingresso + alert |
 | "Memoria" del periodo nel backtest | Risultati storici troppo belli | Stati senza date né prezzi assoluti (rendimenti e distanze relative), split train/test per mese |
 | Prompt injection | Non applicabile nella v1 (stato generato dal codice da numeri) | Se in v2 entrano notizie: filtro di rilevanza con Jev, troncamento, nessuna istruzione nel testo delle notizie |
 | Latenza > 60 s | Timer del ciclo | Il ciclo orario tollera fino a 120 s; oltre → skip con log |
 
-## 4. Jev (giudice)
+## 4. Jev (decisore)
 
 | Errore previsto | Rilevazione | Prevenzione / reazione |
 |---|---|---|
