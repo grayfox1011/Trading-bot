@@ -7,15 +7,15 @@
 
 ## 0. Sintesi in 10 righe
 
-1. **Cosa si costruisce.** Un bot Python che ogni 5 minuti legge i dati di mercato da Hyperliquid, chiede a **Claude Opus 5.5** un segnale strutturato (long/short/flat + convinzione + tesi + invalidazione), passa uno "stato" etichettato a **Jev** (decision model di TypeSafe AI) che risponde con scelte/probabilità tipizzate (regime, qualità del setup, azione, uscita), e lascia al **codice** tutta la matematica: sizing, stop, limiti di rischio, esecuzione e veto.
+1. **Cosa si costruisce.** Un bot Python che **ogni ora** (alla chiusura di ogni candela 1h) legge i dati di mercato da Hyperliquid, chiede a **Claude Opus 5.5** un segnale strutturato (long/short/flat + convinzione + tesi + invalidazione), passa uno "stato" etichettato a **Jev** (decision model di TypeSafe AI) che risponde con scelte/probabilità tipizzate (regime, qualità del setup, azione, uscita), e lascia al **codice** tutta la matematica: sizing, stop, limiti di rischio, esecuzione e veto.
 2. **Dove si opera.** Sui perpetual su azioni USA del dex HIP-3 `xyz` (trade.xyz) di Hyperliquid: `xyz:TSLA`, `xyz:NVDA`, `xyz:AAPL`, `xyz:MSFT`, `xyz:GOOGL`, `xyz:AMZN`, `xyz:META` (leva max 20x, cross margin, "growth mode" con fee ridotte) più `xyz:SP500`. Sono **perpetual sul prezzo dell'azione**, non azioni tokenizzate in senso stretto: nessun dividendo, nessuna proprietà del titolo. Collaterale: USDC.
 3. **Budget.** 100 € ≈ 110 USDC netti dopo i costi di on-ramp. Ordine minimo su Hyperliquid: 10 $ di nozionale. Si può operare con 1 posizione alla volta da 50–100 USDC di nozionale a leva effettiva ≤ 1x sul capitale (leva impostata 3x isolata solo per ridurre il margine bloccato).
-4. **Il problema numero uno è il costo delle API, non il mercato.** Opus 5.5 ogni 5 minuti 24/7 costa circa **166 $/mese** (effort `low`, cache attiva): più dell'intero capitale. Limitando le chiamate alla sessione USA (6,5 h × 22 giorni) si scende a **~33 $/mese**; con un pre-filtro Jev si risparmia un altro 30–50 %. Jev costa **~0,5 $/mese**. La scelta finale è tua (sezione 9).
-5. **Aspettative realistiche.** Nell'esperimento pubblico Alpha Arena (Nof1, ottobre–novembre 2025) sei LLM hanno fatto trading reale su Hyperliquid con 10.000 $ ciascuno: Claude Sonnet 4.5 ha chiuso a −30,8 %, GPT‑5 a −62,7 %, solo Qwen3 Max ha guadagnato (+22,3 %; cifre finali riportate da fonti secondarie, non verificate sul sito di Nof1). Un LLM da solo non è un vantaggio statistico: il valore del progetto sta nella disciplina di rischio, nei costi bassi e nella misurazione. Con 100 € l'obiettivo sensato è **imparare e validare il sistema senza perdere più di 20–30 €**, non "guadagnare".
+4. **Cadenza oraria: costi API sotto controllo.** Con una chiamata Opus 5.5 all'ora durante la sessione USA il costo è di circa **3 $/mese per simbolo** (≈ 9 $ per TSLA, NVDA e SP500; ≈ 32 $ se si copre tutto il 24/5), contro i ~166 $/mese che sarebbe costata la cadenza a 5 minuti 24/7. Jev costa **~0,2 $/mese** anche con una "guardia" ogni 15 minuti. Il vero collo di bottiglia diventa la **validazione statistica**: a 1–2 trade al giorno servono mesi di paper per avere centinaia di trade, quindi la validazione principale è il **backtest sulle candele orarie storiche** (≈ 7 mesi disponibili dall'API, ≈ 20 $ di chiamate per un backtest completo).
+5. **Aspettative realistiche.** Nell'esperimento pubblico Alpha Arena (Nof1, ottobre–novembre 2025) sei LLM hanno fatto trading reale su Hyperliquid con 10.000 $ ciascuno, **su perpetual crypto** (BTC, ETH, SOL, BNB, DOGE, XRP) a leva 10–20x: Claude Sonnet 4.5 ha chiuso a −30,8 %, GPT‑5 a −62,7 %, solo Qwen3 Max ha guadagnato (+22,3 %; cifre finali riportate da fonti secondarie, non verificate sul sito di Nof1). Non esistono esperimenti pubblici equivalenti sui perps azionari, ma la lezione vale lo stesso: il problema era il metodo (previsioni direzionali frequenti, a leva, senza un edge misurato), non l'asset. Sulle azioni ci sono differenze da tenere presenti: il perp **insegue** l'oracolo del titolo reale (TSLA scambia ~28 M$/giorno su Hyperliquid contro decine di miliardi sul Nasdaq), la volatilità è più bassa, e ci sono gap, earnings e dati macro a orari fissi. Per questo la cadenza oraria con filtri di sessione è più adatta dei 5 minuti. Un LLM da solo non è un vantaggio statistico: il valore del progetto sta nella disciplina di rischio, nei costi bassi e nella misurazione. Con 100 € l'obiettivo sensato è **imparare e validare il sistema senza perdere più di 20–30 €**, non "guadagnare".
 6. **Jev è in early access** (waitlist su typesafe.ai). Il piano prevede un "surrogato" a regole con la stessa interfaccia, così lo sviluppo e il paper trading partono subito anche senza chiave Jev.
-7. **Orari.** I perps `xyz` scambiano 24/7 (verificato: candele e trade anche sabato e domenica), ma il prezzo esterno dell'azione arriva solo 24/5 (dom 20:05 → ven 20:00 ET). Fuori da quella finestra il prezzo è "interno" (order book + EMA 30 min) con bande di scoperta: il bot **non apre posizioni** nel weekend/festivi e chiude tutto prima del venerdì sera.
+7. **Orari.** I perps `xyz` scambiano 24/7 (verificato: candele e trade anche sabato e domenica), ma il prezzo esterno dell'azione arriva solo 24/5 (dom 20:05 → ven 20:00 ET). Fuori da quella finestra il prezzo è "interno" (order book + EMA 30 min) con bande di scoperta: il bot **non apre posizioni** nel weekend/festivi e chiude tutto prima del venerdì sera. Tra una decisione oraria e l'altra, una "guardia" ogni 15 minuti (solo codice + Jev, senza Opus) controlla stop, time‑stop e segnali di uscita.
 8. **Sicurezza.** Wallet dedicato con solo il capitale di trading, API wallet ("agent") che può fare ordini ma non prelievi, chiavi solo in variabili d'ambiente, kill‑switch a soglie di perdita.
-9. **Roadmap.** 6 fasi in ~5–6 settimane: setup → dati e paper engine → segnali Claude → decisioni Jev → rischio ed esecuzione (paper ≥ 2 settimane) → live con 20–30 USDC, poi 100.
+9. **Roadmap.** 6 fasi in ~6–8 settimane: setup → dati storici e paper engine → segnali Claude → decisioni Jev → rischio, backtest storico ed esecuzione (paper ≥ 3 settimane) → live con 20–30 USDC, poi 100.
 10. **Legale/fiscale (Italia).** Hyperliquid non geo‑blocca l'UE (blocca USA, Ontario e paesi sanzionati), ma i perps sono derivati in una zona grigia regolatoria (dibattito MiFID II vs MiCA, warning FCA nel Regno Unito). In Italia le plusvalenze su cripto‑attività sono tassate al 33 % dal 2026 (verifica con un commercialista).
 
 ---
@@ -27,13 +27,13 @@
 | Capitale | 100 € → ~110 USDC su Hyperliquid | Dopo fee di acquisto e prelievo su Arbitrum (1–3 €) e gas (centesimi). Deposito minimo bridge: 5 USDC. |
 | Venue | Hyperliquid, dex HIP‑3 `xyz` (trade.xyz) | 98 % del volume HIP‑3, 133 mercati, oracolo Pyth, USDC, API unica HyperCore. |
 | Strumenti | Perps su TSLA, NVDA, AAPL, MSFT, GOOGL, AMZN, META, SP500 | Sono i mercati `xyz` a leva 20x–50x con cross margin abilitato e volumi giornalieri 10–140 M$. Le small cap `xyz` sono isolated‑only, 10x, poco liquide: escluse. |
-| Cadenza | Ciclo ogni 5 minuti allineato alla chiusura della candela 5m | Richiesta dell'utente; coerente con la granularità delle candele Hyperliquid (`candleSnapshot` 5m). |
+| Cadenza | Ciclo decisionale **ogni ora** allineato alla chiusura della candela 1h; "guardia" ogni 15 min (solo codice + Jev) per gestire le uscite | Scelta dell'utente per le azioni: meno rumore, 6–7 decisioni per sessione USA, costi API bassi. Candele 1h disponibili dall'API (≈ 7 mesi di storico per richiesta). |
 | Segnali | Claude Opus 5.5 (`claude-opus-5-5`), output JSON strutturato, effort `low` | Richiesta dell'utente. Costo e latenza controllati con prompt caching e output corto. |
 | Decisioni | Jev (`jev-1.13.0` pinnato) via `typesafe-sdk` | Risposte tipizzate con probabilità e confidenza in 70–500 ms; 0,042 $/M token in input, output gratis. |
 | Esecuzione | `hyperliquid-python-sdk` 0.24.0 con `perp_dexs=["xyz"]` | Supporto nativo HIP‑3 (`xyz:TSLA` → asset id 110001). |
 | Modalità | `paper` (default) → `live` | Il live si attiva solo dopo i criteri di uscita della fase 4. |
 
-**Cosa NON è nel perimetro:** market making, HFT, più venue, azioni tokenizzate spot (xStocks e simili su altre chain: spread e fee non compatibili con 100 € e 5 minuti), ottimizzazione di portafoglio.
+**Cosa NON è nel perimetro:** market making, HFT, più venue, azioni tokenizzate spot (xStocks e simili su altre chain: spread e fee non compatibili con 100 € e trading intraday), ottimizzazione di portafoglio.
 
 ---
 
@@ -54,6 +54,7 @@
 | Funding | Moltiplicatore 0,5 su `xyz`; osservato 0,0006 %/h su TSLA/NVDA/AAPL (≈ 5 %/anno) | docs trade.xyz, `metaAndAssetCtxs` |
 | Spread/profondità TSLA (ven 20:50 UTC) | Spread 0,8 bps; top‑5 book ≈ 33 k$ bid / 7,7 k$ ask | `l2Book` |
 | Volumi 24h (9/10) | XYZ100 182 M$, SP500 141 M$, NVDA 81 M$, TSLA 28 M$, GOOGL 27 M$, AAPL 21 M$, META 31 M$, MSFT 11 M$ | `metaAndAssetCtxs` |
+| Volatilità e volume orari (15/3 → 9/10/2026, 5.000 candele 1h) | ATR(14) 1h mediano: TSLA 0,48 % (range orario mediano in sessione USA 0,97 %), NVDA 0,44 % (0,81 %), AAPL 0,31 % (0,57 %), SP500 0,17 % (0,27 %). Volume orario mediano in sessione: TSLA 1,8 M$, NVDA 3,4 M$, AAPL 0,7 M$, SP500 18,5 M$; di notte 7–8× più basso. | `candleSnapshot` 1h |
 | Weekend | Candele 5m presenti sab 3/10 e dom 4/10 con trade reali (TSLA: 3,4 k unità sabato vs 98 k lunedì; SP500 molto più attivo) | `candleSnapshot` |
 | Prezzo esterno | 24/5, da domenica 20:05 a venerdì 20:00 ET (pre, regular, post, overnight). Fuori: oracolo "interno" = ultimo prezzo esterno + EMA 30 min dell'impact price del book, con bande di scoperta ±(1/leva max) | docs trade.xyz "Specification index", "Architecture" |
 | Mark price | Mediana di: oracolo, oracolo+basis EMA 150 s, mediana(best bid, best ask, last) | docs trade.xyz |
@@ -86,7 +87,7 @@
 |---|---|
 | Modello | `claude-opus-5-5`, contesto 1 M, output fino a 128 k |
 | Prezzo | 4 $/M input, 20 $/M output, cache read 0,20 $/M (scrittura cache 1,25×) |
-| Thinking | Sempre attivo (adattivo); si controlla con `output_config.effort` (`low`…`max`, default `medium`). Per segnali ogni 5 minuti: `low`. |
+| Thinking | Sempre attivo (adattivo); si controlla con `output_config.effort` (`low`…`max`, default `medium`). Per segnali orari: `low` (oppure `medium`, ≈ 1,8× il costo, se si vuole più analisi). |
 | Output strutturato | `client.messages.parse(..., output_format=ModelloPydantic)` oppure `output_config.format = json_schema` |
 | Caching | `cache_control` sul system prompt (stabile) → paga pieno solo lo stato di mercato variabile |
 | Fallback | In produzione aggiungere `fallbacks: "default"` con beta `server-side-fallback-2026-07-01` (gestione dei rari `stop_reason: "refusal"`) |
@@ -97,11 +98,11 @@
 
 ```
                 ┌──────────────────────────────────────────────────────────┐
-                │  SCHEDULER (ogni 5 min, +3 s dopo la chiusura candela)   │
+                │  SCHEDULER (ogni ora +5 s; guardia uscite ogni 15 min)   │
                 └───────────────┬──────────────────────────────────────────┘
                                 ▼
 ┌───────────────────────── LIVELLO 1: CODICE (deterministico) ─────────────────────────┐
-│  Hyperliquid Info API ──► candele 5m/1h, l2Book, metaAndAssetCtxs, posizione, fills │
+│  Hyperliquid Info API ──► candele 1h/4h, l2Book, metaAndAssetCtxs, posizione, fills │
 │  Feature engine: EMA/VWAP/RSI/ATR, rendimenti, volume relativo, spread, profondità, │
 │                  funding, OI, sessione (pre/regular/post/overnight/weekend), eventi │
 │  State builder:  (a) testo compatto con numeri per Claude                           │
@@ -131,14 +132,14 @@
 
 ---
 
-## 4. Il ciclo ogni 5 minuti (tempo totale obiettivo < 45 s)
+## 4. Il ciclo orario (tempo totale obiettivo < 60 s) e la guardia ogni 15 minuti
 
 | Passo | Cosa succede | Budget tempo | Costo |
 |---|---|---|---|
-| 0 | Scheduler scatta a hh:m5+3 s (orologio NTP). Se il ciclo precedente è ancora in corso → skip e alert. | – | – |
+| 0 | Scheduler scatta a hh:00 + 5 s (chiusura candela 1h, orologio NTP). Se il ciclo precedente è ancora in corso → skip e alert. | – | – |
 | 1 | Riconcilia stato reale: `clearinghouseState(dex="xyz")`, `openOrders`, `userFills` (nuovi fill dal ciclo precedente). Se la posizione reale ≠ posizione attesa → modalità "safe": chiudi/annulla e notifica. | 1 s | peso 2–20 |
-| 2 | Dati: candele 5m (ultime 120) e 1h (ultime 48) per i simboli dell'universo, `l2Book`, `metaAndAssetCtxs` (mark, oracle, funding, OI, volume). Cache locale per non riscaricare. | 2 s | peso ~60 |
-| 3 | Gate "hard" pre‑modello: sessione (solo con prezzo esterno attivo; preferenza regular 9:30–16:00 ET), nessun evento programmato ±15 min (earnings del titolo, FOMC, CPI, NFP), spread ≤ 3 bps, profondità top‑of‑book ≥ 20× la size, limiti di perdita non raggiunti, cooldown non attivo. Se fallisce → log e fine ciclo (nessuna chiamata a modelli). | 0 s | 0 |
+| 2 | Dati: candele 1h (ultime 72), 4h (ultime 60) e 15m (ultime 16) per i simboli dell'universo, `l2Book`, `metaAndAssetCtxs` (mark, oracle, funding, OI, volume). Cache locale per non riscaricare. | 2 s | peso ~60 |
+| 3 | Gate "hard" pre‑modello: sessione (solo con prezzo esterno attivo; preferenza regular 9:30–16:00 ET), nessun evento programmato ±60 min (earnings del titolo, FOMC, CPI, NFP), spread ≤ 3 bps, profondità top‑of‑book ≥ 20× la size, limiti di perdita non raggiunti, cooldown non attivo. Se fallisce → log e fine ciclo (nessuna chiamata a modelli). | 0 s | 0 |
 | 4 | Jev pre‑filtro (opzionale ma consigliato): `regime` (Choice) + `is_tradable` (Noul). Se `is_tradable < 0,55` e non ci sono posizioni → fine ciclo. | 0,5 s | ~0,0001 $ |
 | 5 | Claude Opus 5.5: stato compatto → JSON segnale (vedi §6). Timeout 40 s, 1 retry. | 5–20 s | ~0,02 $ |
 | 6 | Jev decisione (vedi §7): stato etichettato + tesi di Claude → `action` ×3 (opzioni mescolate), `setup_quality`, `thesis_consistent`, `exit_now`, `risk_ok`. | 0,5 s | ~0,0001 $ |
@@ -146,6 +147,8 @@
 | 8 | Risk engine: size, stop, target, leva, controllo nozionale ≥ 10 $ e multipli dei decimali. Veto se qualcosa non torna. | 0 s | 0 |
 | 9 | Esecuzione (`live`) o simulazione (`paper`): ordine IOC con slippage max 0,3 %, poi trigger SL/TP reduce‑only. Verifica fill. | 1–3 s | 1–3 azioni |
 | 10 | Persistenza: stato, prompt, risposte (con `model` di Jev e `usage` di Claude), decisione, ordini, costi API stimati. Alert Telegram su apertura/chiusura/errori. | 0,5 s | – |
+
+**Guardia ogni 15 minuti (hh:15, hh:30, hh:45), senza Opus.** Solo se c'è una posizione aperta: riconcilia lo stato reale, aggiorna lo stato etichettato con le candele 15m, chiede a Jev soltanto `exit_now` e `thesis_consistent`, e applica le regole di uscita del codice (time‑stop, trailing, finestra oraria, eventi). Chiude se `exit_now ≥ 0,7` per due controlli consecutivi. Stop e target restano comunque come trigger on‑chain, quindi il bot è protetto anche se la guardia salta. Costo: ~0,2 $/mese.
 
 ---
 
@@ -163,19 +166,19 @@
 | Posizioni aperte contemporanee | 1 | Con 110 USDC due posizioni rendono il sizing insignificante. |
 | Nozionale per posizione | 50–100 USDC (≈ 0,5–0,9× equity) | Sopra il minimo di 10 $, sotto i limiti di profondità del book. |
 | Leva impostata | 3x, **isolated** (`update_leverage(3, coin, is_cross=False)`) | Margine bloccato 17–33 USDC; la perdita massima resta limitata al margine anche in caso di gap. |
-| Rischio per trade | ≤ 1,5 % dell'equity (≈ 1,6 USDC) | Stop = max(0,6 %, 1,2 × ATR(14) 5m) dal prezzo di ingresso; la size si ricava dal rischio, non viceversa. |
+| Rischio per trade | ≤ 1,5 % dell'equity (≈ 1,6 USDC) | Stop = max(0,8 %, 1,5 × ATR(14) 1h) dal prezzo di ingresso (per TSLA ≈ 0,8–1,1 %); la size si ricava dal rischio, non viceversa. |
 | Target | 1,5–2 R oppure uscita Jev (`exit_now ≥ 0,7`) | Partial take‑profit non ha senso con queste size. |
-| Time‑stop | 6 candele (30 min) senza progresso → chiudi; durata massima 4 h | Trading intraday: niente overnight nelle prime settimane. |
+| Time‑stop | 4 candele 1h senza progresso (< +0,3 R) → chiudi; chiusura forzata alle 15:45 ET | v1 intraday: niente overnight (gap all'apertura). In v2, dopo il backtest, overnight consentito con size dimezzata solo con prezzo esterno attivo. |
 | Finestra operativa | Solo con prezzo esterno attivo (dom 20:05 → ven 20:00 ET); ingressi preferibilmente 9:30–16:00 ET; **flat entro ven 19:30 ET** | Weekend: liquidità al 3–5 % e prezzo interno con bande di scoperta. |
-| Eventi | Nessun ingresso ±15 min da earnings del titolo, FOMC, CPI, NFP; nessuna posizione aperta attraverso gli earnings | Calendario mantenuto in `config/events.yaml`. |
+| Eventi | Nessun ingresso ±60 min da earnings del titolo, FOMC, CPI, NFP; nessuna posizione aperta attraverso gli earnings | Calendario mantenuto in `config/events.yaml`. |
 | Limite perdita giornaliera | 4 % equity → stop fino a mezzanotte UTC | |
 | Limite settimanale | 8 % → stop fino a lunedì + revisione | |
 | Max drawdown | 15 % dal picco → bot fermo, serve riavvio manuale | |
-| Max trade/giorno | 6; cooldown 15 min dopo una perdita | Limita anche le chiamate API. |
+| Max trade/giorno | 2; cooldown 2 ore dopo una perdita; nessun nuovo ingresso dopo le 14:00 ET | Con 6–7 decisioni per sessione, 1–2 trade al giorno è il massimo sensato. |
 | Qualità esecuzione | Spread ≤ 3 bps, top‑5 book ≥ 20× size, slippage IOC ≤ 0,3 % | Altrimenti nessun ordine. |
 | Costi API | Budget mensile configurabile (es. 40 $); al superamento il bot passa a `paper` | Contatore su `usage` di Claude e `input_tokens` di Jev. |
 
-**Esempio numerico.** Equity 110 USDC, TSLA a 382,6 $, ATR 5m 0,25 % → stop 0,6 % (il minimo). Rischio 1,5 % = 1,65 USDC → nozionale = 1,65 / 0,006 = 275 USDC, ma il cap è 100 USDC → size = 100 / 382,6 = 0,261 → arrotondata a 3 decimali `0.261` (nozionale 99,9 $). Rischio effettivo 0,60 USDC (0,55 %). Fee andata/ritorno in growth mode ≈ 0,02 USDC, nominali ≈ 0,18 USDC; spread ≈ 0,01 USDC. Target 1,5 R = +0,9 % ≈ 0,90 USDC. Con queste cifre servono **≥ 45–50 % di trade vincenti a 1,5 R** solo per pareggiare le fee nominali: la precisione del sistema va misurata su centinaia di trade in paper prima del live.
+**Esempio numerico.** Equity 110 USDC, TSLA a 382,6 $, ATR(14) 1h 0,48 % → stop = max(0,8 %, 0,72 %) = 0,8 %. Rischio 1,5 % = 1,65 USDC → nozionale = 1,65 / 0,008 = 206 USDC, ma il cap è 100 USDC → size = 100 / 382,6 = 0,261 → arrotondata a 3 decimali `0.261` (nozionale 99,9 $). Rischio effettivo 0,80 USDC (0,73 %). Fee andata/ritorno in growth mode ≈ 0,02 USDC, nominali ≈ 0,18 USDC; spread ≈ 0,01 USDC. Target 1,5 R = +1,2 % ≈ 1,20 USDC. Con queste cifre servono **≥ 41 % di trade vincenti a 1,5 R con le fee growth mode, ≥ 49 % con quelle nominali** solo per pareggiare: la precisione del sistema va misurata su centinaia di trade (backtest storico + paper) prima del live.
 
 ---
 
@@ -183,7 +186,7 @@
 
 ### 6.1 Cosa riceve (≈ 1.000–1.500 token variabili + system prompt ≈ 2.000 token in cache)
 - **System prompt (stabile, in cache):** ruolo (analista intraday su perps azionari), regole del gioco (orizzonte 5–60 min, costi, niente overnight), formato di output, criteri di convinzione, divieti (non calcolare size, non inventare notizie, dichiarare "flat" quando non c'è edge), descrizione dei campi dello stato.
-- **Stato (variabile, in ordine stabile, senza timestamp inutili):** simbolo; sessione e minuti alla chiusura USA; ultime 24 candele 5m (o,h,l,c,v compatte) + riassunto 1h/4h (trend, range, VWAP, EMA 20/50/200, RSI 14, ATR %, volume relativo); mark vs oracle (premium), funding, variazione OI 1h; spread e profondità; regime Jev (dal pre‑filtro); posizione aperta (lato, P&L in R, minuti); ultimi 3 segnali con esito (feedback); flag calendario.
+- **Stato (variabile, in ordine stabile, senza timestamp inutili):** simbolo; sessione e minuti alla chiusura USA; ultime 24 candele 1h (o,h,l,c,v compatte) + ultime 4 candele 15m + riassunto 4h/1g (trend, range, VWAP di sessione, EMA 20/50/200, RSI 14, ATR %, volume relativo, distanza da apertura/massimo/minimo di giornata); mark vs oracle (premium), funding, variazione OI 1h; spread e profondità; regime Jev (dal pre‑filtro); posizione aperta (lato, P&L in R, ore); ultimi 3 segnali con esito (feedback); flag calendario.
 - **Niente notizie in tempo reale** nella v1: aggiungerle costa (web search) e introduce rumore; valutare in v2 con un filtro Jev di rilevanza.
 
 ### 6.2 Cosa restituisce (schema Pydantic → `messages.parse`)
@@ -238,10 +241,10 @@ Note operative: verifica che `cache_read_input_tokens > 0` dal secondo ciclo (se
   "symbol": "TSLA perpetual",
   "session": "US regular hours, 94 minutes to close",
   "trend_1h": "up, price above VWAP and EMA20",
-  "trend_5m": "pullback of 0.4% into EMA20 in the last 3 candles",
+  "trend_15m": "pullback of 0.4% into EMA20 in the last 3 candles",
   "momentum": "RSI 58, neutral-bullish",
-  "volatility": "ATR normal (0.25% per 5m); 1-hour range 0.9%",
-  "volume": "last 15m volume is 1.4x the session average",
+  "volatility": "ATR normal (0.5% per hour); 4-hour range 1.4%",
+  "volume": "last hour volume is 1.4x the session average",
   "order_book": "spread tight (0.8 bps), bid depth 4x ask depth",
   "derivatives": "mark at oracle, funding neutral, open interest rising",
   "event_risk": "no scheduled events in the next 2 hours",
@@ -265,7 +268,7 @@ def q_action():          # opzioni mescolate ad ogni domanda: Jev tende a prefer
             "short": "Open or hold a short position now",
             "flat": "Do not trade; close any open position if the thesis is invalid"}
     items = list(opts.items()); random.shuffle(items)
-    return Choice(instructions="Given the state and the analyst signal, what is the best action for the next 30 minutes?",
+    return Choice(instructions="Given the state and the analyst signal, what is the best action for the next 2 to 4 hours?",
                   criteria=dict(items))
 
 r = jev.system_one(state=stato_jev, questions={
@@ -338,7 +341,7 @@ ex = Exchange(wallet, constants.MAINNET_API_URL, account_address=os.environ["HL_
 
 # Dati
 end = int(time.time() * 1000)
-candles = info.candles_snapshot("xyz:TSLA", "5m", end - 120 * 5 * 60 * 1000, end)
+candles = info.candles_snapshot("xyz:TSLA", "1h", end - 72 * 3600 * 1000, end)
 book = info.l2_snapshot("xyz:TSLA")
 meta, ctxs = info.post("/info", {"type": "metaAndAssetCtxs", "dex": "xyz"})
 stato = info.user_state(os.environ["HL_ACCOUNT_ADDRESS"], dex="xyz")
@@ -362,22 +365,23 @@ Regole: arrotonda la size ai `szDecimals` dell'asset e il prezzo a 5 cifre signi
 
 ## 9. Costi stimati e opzioni (decisione tua)
 
-Ipotesi per chiamata Opus: 2.000 token di system prompt in cache, 1.200 token di stato, 700 token di output (thinking incluso, effort `low`).
+Ipotesi per chiamata Opus: 2.000 token di system prompt in cache, 1.500 token di stato, 700 token di output (thinking incluso, effort `low`) ≈ 0,020 $. Sessione USA = 7 decisioni orarie × 22 giorni.
 
 | Scenario | $/chiamata | $/giorno | $/mese |
 |---|---|---|---|
-| **A. Opus 5.5 ogni 5 min, 24/7** (richiesta letterale) | 0,019 | 5,5 | **~166** |
-| **B. Opus 5.5 ogni 5 min solo sessione USA regolare** (6,5 h × 22 gg) | 0,019 | 1,5 | **~33** |
-| B + pre‑filtro Jev (stima −30/50 % chiamate) | 0,019 | ~0,9 | **~18–23** |
-| Opus 5.5 effort `medium` (output ~1.500) 24/7 | 0,035 | 10,1 | ~304 |
-| C. Sonnet 5.5 ogni 5 min 24/7 (per confronto) | 0,010 | 2,8 | ~85 |
-| D. Haiku 5.5 ogni 5 min 24/7 (per confronto) | 0,0005 | 0,14 | ~4 |
+| **A. Opus 5.5 ogni ora, sessione USA, 1 simbolo** | 0,020 | 0,14 | **~3** |
+| **B. Opus 5.5 ogni ora, sessione USA, 3 simboli (TSLA, NVDA, SP500) [consigliato]** | 0,020 | 0,43 | **~9** |
+| C. Opus 5.5 ogni ora 24/5 (pre, post e overnight), 3 simboli | 0,020 | 1,47 | ~32 |
+| Opus 5.5 ogni ora 24/7, 1 simbolo (weekend incluso: sconsigliato, prezzo interno) | 0,020 | 0,49 | ~15 |
+| Opus 5.5 effort `medium` (output ~1.500), sessione USA, 1 simbolo | 0,036 | 0,25 | ~6 |
 | Opus 5.5 come "stratega" 1 volta/giorno (20 k in, 4 k out: rivede i log e propone modifiche ai parametri) | 0,16 | 0,16 | ~5 |
-| Jev, 288 chiamate/giorno × 1.500 token | ~0,00006 | 0,018 | **~0,5** |
+| Jev: guardia ogni 15 min 24/7 + domande del ciclo orario | ~0,0001 | 0,01 | **~0,2** |
+| Backtest storico: 1.000 stati orari (≈ 7 mesi di sessione USA su 1 simbolo), 1 chiamata Opus + 1 Jev per stato | 0,020 | – | ~19 una tantum |
+| Per confronto: la cadenza iniziale a 5 minuti 24/7 con Opus | 0,019 | 5,5 | ~166 |
 | VPS (Hetzner CX22 o simile) | – | – | ~4 |
 | Hyperliquid: deposito/prelievo | – | – | ~1–3 una tantum |
 
-**Raccomandazione:** scenario **B + pre‑filtro Jev** (≈ 20–35 $/mese) nelle prime 4–6 settimane; è l'unico modo per usare Opus a 5 minuti senza che il costo API superi il capitale. Lo scenario A resta disponibile con un flag di configurazione (`signals.schedule: always`), ma va acceso consapevolmente. Lo schema "Opus stratega giornaliero + modello leggero per i segnali" (quello dell'articolo "Opus 5.5 + Jev") è una variante che il repo supporterà con un semplice cambio del parametro `signals.model`.
+**Raccomandazione:** scenario **B** (≈ 9 $/mese) con guardia Jev ogni 15 minuti, budget API mensile di sicurezza 20 $ (oltre, il bot torna in `paper`), e un backtest storico (~20 $) ad ogni modifica importante di prompt, domande o soglie. Il pre‑filtro Jev del passo 4 resta come filtro di qualità, non più come risparmio. Lo schema "Opus stratega giornaliero + modello leggero per i segnali" (quello dell'articolo "Opus 5.5 + Jev") resta una variante attivabile cambiando il parametro `signals.model`.
 
 ---
 
@@ -386,11 +390,11 @@ Ipotesi per chiamata Opus: 2.000 token di system prompt in cache, 1.200 token di
 | Fase | Durata | Attività | Criterio di uscita |
 |---|---|---|---|
 | **0. Setup** | 1–2 giorni | Wallet dedicato, USDC su Arbitrum, deposito 20 USDC (il resto arriva alla fase 5), API wallet, unified account, chiave Anthropic, waitlist Jev, VPS/Docker, Telegram bot, repo con `.env.example` | Tutte le chiavi in `.env`, `python -m bot.healthcheck` verde (legge saldo, meta `xyz`, candele; Claude e Jev/surrogato rispondono) |
-| **1. Dati e paper engine** | Settimana 1 | `data/`, `features/`, `state/`, `storage/`, `execution/paper.py`, raccolta continua candele 5m/1h (ogni richiesta copre max 5.000 candele ≈ 17 giorni: accumulare storico su SQLite), script `replay.py` | 7 giorni di storico salvati; replay deterministico; test unitari su feature e size |
+| **1. Dati e paper engine** | Settimana 1 | `data/`, `features/`, `state/`, `storage/`, `execution/paper.py`, scarico dello storico (candele 1h: 5.000 per richiesta ≈ 7 mesi, da marzo 2026; 15m ≈ 52 giorni; 4h tutto lo storico) e raccolta continua su SQLite, script `replay.py` | ≈ 7 mesi di storico 1h salvati per l'universo; replay deterministico; test unitari su feature e size |
 | **2. Segnali Claude** | Settimana 1–2 | Prompt di sistema, schema `Segnale`, cache verificata, contatore costi, eval su 200 stati registrati: coerenza (stesso stato → stesso segnale ≥ 90 %), distribuzione long/short/flat, costo medio | Costo medio ≤ 0,025 $/chiamata, cache hit ≥ 90 %, nessun errore di schema |
 | **3. Decisioni Jev** | Settimana 2 | `decision/surrogate.py`, `decision/jev_judge.py`, `decision/policy.py`, test di stabilità (ordine opzioni, bucket), log del `model` | Accordo delle 3 domande `action` ≥ 85 %; distribuzione di confidenza sensata; replay con surrogato e (se disponibile) Jev |
-| **4. Rischio ed esecuzione in paper** | Settimane 2–4 | `risk/engine.py`, kill‑switch, calendario eventi, esecutore live provato su **testnet** (dex principale, es. BTC) per la meccanica ordini/trigger; **paper trading su dati mainnet ≥ 2 settimane** | ≥ 100 trade paper; profit factor netto ≥ 1,2; max DD ≤ 10 %; costo API/mese entro budget; zero incidenti di riconciliazione |
-| **5. Live progressivo** | Dal weekend 4–5 | Live con 20–30 USDC per 1–2 settimane (size minima 10–15 $); poi 100 USDC se le metriche live sono in linea con il paper (slippage reale ≤ 2× stimato) | Metriche live ≈ paper; nessun errore di esecuzione |
+| **4. Rischio, backtest ed esecuzione in paper** | Settimane 2–5 | `risk/engine.py`, kill‑switch, calendario eventi; **backtest storico** su ≥ 1.000 stati orari (stati costruiti solo con dati fino alla candela chiusa, prezzi normalizzati e senza date, per limitare look‑ahead e "memoria" del modello sul periodo); esecutore live provato su **testnet** (dex principale, es. BTC) per la meccanica ordini/trigger; **paper trading su dati mainnet ≥ 3 settimane** | Backtest: ≥ 150 trade simulati, profit factor netto ≥ 1,2, max DD ≤ 10 %, meglio di tutte e tre le baseline di §12; paper: 20–40 trade coerenti col backtest; costo API entro budget; zero incidenti di riconciliazione |
+| **5. Live progressivo** | Dalla settimana 6 | Live con 20–30 USDC per 1–2 settimane (size minima 10–15 $); poi 100 USDC se le metriche live sono in linea con il paper (slippage reale ≤ 2× stimato) | Metriche live ≈ paper; nessun errore di esecuzione |
 | **6. Operatività e iterazione** | Continuo | Report giornaliero su Telegram; revisione settimanale con Opus (legge i log, propone modifiche a soglie/prompt in un PR, **mai** applicate in automatico); versioning di prompt e domande; A/B surrogato vs Jev | Decisione mensile: continuare, cambiare, fermare |
 
 ---
@@ -437,7 +441,8 @@ Stack: Python 3.11+, SQLite (basta e si copia con un `scp`), APScheduler o loop 
 - **Baseline obbligatorie:** (1) random con la stessa frequenza e durata dei trade, (2) solo Claude senza Jev, (3) solo surrogato/Jev senza Claude. Se il sistema completo non batte in modo netto tutte e tre su ≥ 100 trade, non è il momento del live.
 - **Metriche per trade:** hit rate, R medio, profit factor, expectancy netta (fee nominali + spread + funding), max drawdown, tempo medio in posizione, slippage.
 - **Metriche di sistema:** P&L netto **meno costi API**, costo API per trade, tasso di disaccordo Claude↔Jev e suo esito, calibrazione di Jev (quando dice 0,8 ha ragione ~80 % delle volte?), latenza del ciclo, cache hit ratio.
-- **Limite di un bot a 5 minuti con 100 €:** ogni trade rischia ~0,6–1,6 USDC; il rumore statistico è enorme. Il giudizio va fatto sulla **distribuzione** (expectancy e drawdown) dopo centinaia di trade in paper, non sul saldo dopo una settimana.
+- **Limite di un bot orario con 100 €:** ogni trade rischia ~0,8–1,6 USDC e si fanno 1–2 trade al giorno: in paper servono mesi per accumulare centinaia di trade. Per questo la validazione principale è il **backtest sugli stati orari storici** (≈ 7 mesi di candele 1h disponibili), mentre il paper conferma esecuzione, slippage e costi reali. Il giudizio va fatto sulla **distribuzione** (expectancy e drawdown), non sul saldo dopo una settimana.
+- **Backtest con modelli:** ogni stato storico richiede una chiamata Opus e una Jev (≈ 0,02 $). Regole anti‑inganno: lo stato contiene solo dati fino alla candela chiusa; niente date assolute né notizie; prezzi come rendimenti percentuali e livelli relativi (distanza da VWAP/EMA), così il modello non può "ricordare" il periodo; stessa pipeline del live, nessun parametro ottimizzato sul periodo di test (split train/test per mese).
 
 ---
 
@@ -462,18 +467,19 @@ Stack: Python 3.11+, SQLite (basta e si copia con un `scp`), APScheduler o loop 
 
 ## 15. Decisioni che spettano a te prima della fase 2
 
-1. **Cadenza Opus:** scenario A (24/7, ~166 $/mese), **B (sessione USA, ~33 $/mese) [consigliato]**, o B + pre‑filtro Jev (~20 $/mese)?
-2. **Budget API mensile massimo** oltre il quale il bot torna in paper (proposta: 40 $).
-3. **Universo iniziale:** solo TSLA + NVDA + SP500 (proposta) oppure tutte le 8 blue chip?
+1. **Copertura oraria di Opus:** solo sessione USA regolare (scenario B, ~9 $/mese, consigliato) oppure tutto il 24/5 con pre/post/overnight (~32 $/mese, liquidità 7–8× più bassa)?
+2. **Budget API mensile massimo** oltre il quale il bot torna in paper (proposta: 20 $).
+3. **Universo iniziale:** TSLA + NVDA + SP500 (proposta) oppure tutte le 8 blue chip (~24 $/mese)?
 4. **Modalità account Hyperliquid:** unified account (proposta) o standard con trasferimenti espliciti?
 5. **Ospitare il bot:** VPS (~4 €/mese) o macchina di casa (Raspberry/PC sempre acceso)?
 6. **Jev:** hai già accesso early access o partiamo con il surrogato e aggiungiamo Jev quando arriva la chiave?
+7. **Overnight:** confermi la v1 solo intraday (chiusura forzata alle 15:45 ET)?
 
 ---
 
 ## 16. Fonti
 
-**Hyperliquid (verifiche dirette sull'API pubblica il 9/10/2026)**: `perpDexs`, `meta`/`metaAndAssetCtxs` con `dex:"xyz"`, `candleSnapshot` 5m (2–9 ottobre), `l2Book`, `userFees`; SDK `hyperliquid-python-sdk` 0.24.0 (`perp_dexs`, `name_to_asset`, `market_open`, `update_leverage`, `send_asset`, `approve_agent`, `user_dex_abstraction`).
+**Hyperliquid (verifiche dirette sull'API pubblica il 9/10/2026)**: `perpDexs`, `meta`/`metaAndAssetCtxs` con `dex:"xyz"`, `candleSnapshot` 5m (2–9 ottobre) e 1h (15 marzo – 9 ottobre 2026), `l2Book`, `userFees`; SDK `hyperliquid-python-sdk` 0.24.0 (`perp_dexs`, `name_to_asset`, `market_open`, `update_leverage`, `send_asset`, `approve_agent`, `user_dex_abstraction`).
 - Docs Hyperliquid: [HIP‑3 builder‑deployed perpetuals](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-3-builder-deployed-perpetuals), [Info endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint), [Perpetuals info](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals), [Asset IDs](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids), [Rate limits](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits), [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees), [Error responses](https://hyperliquid.gitbook.io/Hyperliquid-docs/for-developers/api/error-responses), [USDC/bridge](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/usdc), [Account abstraction modes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes.md), [How to start trading](https://hyperliquid.gitbook.io/hyperliquid-docs/onboarding/how-to-start-trading), [Python SDK](https://github.com/hyperliquid-dex/hyperliquid-python-sdk).
 - trade.xyz: [Specification index](https://docs.trade.xyz/perpetuals/specifications-and-schedules/specification-index.md), [Architecture](https://docs.trade.xyz/architecture.md), [Risk & margining](https://docs.trade.xyz/perpetuals/risk-and-margining.md).
 - Guide terze: [Equity perps guide](https://hyperliquidguide.com/guides/trading/equity-perps-guide), [XYZ explained](https://hyperliquidguide.com/guides/trading/hyperliquid-xyz-explained), [HIP‑3 explained (Nansen)](https://nansen.ai/post/what-is-hip-3-hyperliquid), [Trade[XYZ] 98 % del volume HIP‑3](https://www.kucoin.com/news/flash/trade-xyz-builds-92-markets-and-98-hip-3-volume-on-hyperliquid-in-8-months), [Open interest equities (CryptoBriefing)](https://cryptobriefing.com/hyperliquid-open-interest-tokenized-equities/), [Deposits & withdrawals (OneKey)](https://onekey.so/blog/ecosystem/complete-guide-to-hyperliquid-deposits-withdrawals-2026-fbe041), [Chainstack: build a Hyperliquid bot](https://chainstack.com/how-to-build-a-hyperliquid-trading-bot/).
