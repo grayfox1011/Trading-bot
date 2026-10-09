@@ -165,6 +165,26 @@
 
 Quando non c'è posizione e il gate fallisce, il ciclo di decisione non chiama Jev. Quando c'è una posizione, Jev viene sempre interrogato (almeno `exit_now`), anche fuori finestra, finché la posizione non è chiusa. Costo totale di Jev con 4 decisioni l'ora in sessione: ~0,2 $/mese.
 
+### 4.3 Il feed: chi produce cosa
+
+Il "feed" è un file JSON per simbolo e per ciclo (`state.json`), unica fonte di verità per Jev, per il backtest e per la futura interfaccia grafica. Lo costruisce il codice; Opus lo arricchisce; Jev lo legge; nessuno dei due modelli scarica dati o scrive domande.
+
+| Passo | Chi | Quando | Cosa produce |
+|---|---|---|---|
+| 1 | Codice | ogni 15 min | `quant.json`: candele 1h/4h/15m, indicatori, book, funding, OI, sessione, eventi, posizione e P&L in R, già tradotti in etichette (§7.1) |
+| 2 | Opus (oracolo) | ogni ora | `oracle.json`: scenari 4 h con probabilità, bias, livelli, caso long e caso short, invalidazioni, rischi (§6.2), calcolati **a partire da `quant.json`**, mai da dati scaricati da Opus |
+| 3 | Codice | ogni 15 min | `state.json` = `quant` + `oracle` (con età e validità) + `position`; salvato nel log degli eventi |
+| 4 | Jev (decisore) | ogni 15 min | Risposte alle **domande fisse e versionate** (`questions_vN.yaml`) su `state.json`: azione ×3, qualità del setup, rischio, uscita, coerenza dell'oracolo, regime (§7.2) |
+| 5 | Codice | ogni 15 min | Soglie e veti (§7.3), size e stop (§5.2), ordini (§8), persistenza e alert |
+
+Tre regole che rendono il feed affidabile:
+
+- **I dati li scarica e li calcola il codice.** Un feed costruito dal codice è deterministico, costa zero, arriva in un secondo e si rigioca sui 7 mesi di storico. Se li scaricasse Opus con strumenti di rete: 3–10× più token e latenza per ciclo, errori di intervallo o di campo, aritmetica inaffidabile sugli indicatori, nessuna riproducibilità (quindi niente backtest) e una superficie di attacco in più (contenuti esterni che condizionano l'output).
+- **Le domande a Jev sono fisse e versionate.** Se cambiassero ad ogni ciclo, le risposte non sarebbero confrontabili, le soglie non si potrebbero tarare e la calibrazione non si potrebbe misurare. Opus può aiutare a scriverle una volta, offline (come nel cookbook TypeSafe in cui un LLM genera la specifica delle domande), ma non le cambia in produzione. Ciò che Opus può variare ogni ora è il **contenuto** dello stato, ad esempio "condizione long: prezzo sopra VWAP, soddisfatta", che il codice trasforma in un'etichetta.
+- **La previsione di Opus è un campo tra gli altri.** Se Jev decidesse solo in base alla previsione di Opus, sarebbe un formattatore dell'opinione dell'LLM: lo schema di Alpha Arena con un involucro tipizzato. Jev aggiunge valore perché vede anche lo stato quantitativo, la posizione e i rischi, e può dissentire; per questo la previsione è probabilistica (tre scenari), non una direzione.
+
+**Estensione v2:** una ricerca a bassa frequenza in cui Opus, una volta al giorno e con ricerca web, produce `context.json` (earnings, eventi macro, catalizzatori dei titoli dell'universo) da rivedere a mano e aggiungere al feed come etichette. Costa pochi centesimi al giorno ed è l'unico caso in cui ha senso che sia Opus a "scaricare" qualcosa.
+
 ---
 
 ## 5. Universo e regole di rischio con ~110 USDC
