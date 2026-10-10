@@ -61,16 +61,17 @@
 | Errore previsto | Rilevazione | Prevenzione / reazione |
 |---|---|---|
 | Timeout, 529 "overloaded", 429 | Eccezioni `APITimeoutError`, `InternalServerError`, `RateLimitError` | Timeout 60 s, 2 retry con backoff; poi nessuna analisi valida → nessun nuovo ingresso; le posizioni restano gestite da trigger on‑chain e dalle decisioni di uscita di Jev |
-| Output troncato | `stop_reason == "max_tokens"` (il thinking ha consumato il budget) | `max_tokens` 4000 con effort `low`; un retry a 6000; se ricorre, rivedere il prompt |
+| Output troncato | `stop_reason == "max_tokens"` (il thinking ha consumato il budget) | `max_tokens` 16000 con effort `high`; un retry a 32000 in streaming (`messages.stream` con output strutturato in `output_config.format`); se ricorre, rivedere il prompt |
 | Refusal | `stop_reason == "refusal"` | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`); se anche il fallback rifiuta → nessuna analisi valida per quest'ora |
 | JSON non valido o fuori schema | `messages.parse` solleva un errore di validazione | Nessuna analisi valida (Jev può solo chiudere), testo grezzo nel log, contatore; 3 errori consecutivi → alert "prompt rotto" |
 | Analisi che cambia lettura ogni ora | Bias e scenari che oscillano | L'oracolo non decide: Jev vede l'analisi come un campo dello stato, con la sua età, accanto ai dati quantitativi; invertire una posizione richiede due decisioni Jev concordi a 15 minuti di distanza (isteresi nel codice); il cooldown dopo una perdita evita il ping‑pong |
 | Numeri inventati o calcoli sbagliati | – | Nessun numero dell'oracolo entra direttamente in size o prezzi; le distanze di invalidazione sono clampate e combinate con l'ATR dal codice; le probabilità degli scenari vengono normalizzate |
 | Costi che esplodono | `usage.cache_read_input_tokens == 0` per 3 chiamate; costo giornaliero > budget/22 | Alert "cache persa" (qualcosa di variabile è finito nel prefisso); budget mensile → passaggio automatico a `paper` |
+| Crediti API esauriti (crediti inclusi nel piano Max o prepagati) | HTTP 400 con "Your credit balance is too low to access the Anthropic API" | Workspace Console dedicato con limite di spesa; alert quando il saldo scende sotto il 20 %; auto‑ricarica opzionale; alla risposta di errore: nessuna analisi valida → nessun nuovo ingresso, Jev gestisce solo le uscite |
 | Modello deprecato o id errato | HTTP 404 `NotFoundError` | Il modello è un parametro di config; nessun nuovo ingresso + alert |
 | "Memoria" del periodo nel backtest | Risultati storici troppo belli | Stati senza date né prezzi assoluti (rendimenti e distanze relative), split train/test per mese |
 | Prompt injection | Non applicabile nella v1 (stato generato dal codice da numeri) | Se in v2 entrano notizie: filtro di rilevanza con Jev, troncamento, nessuna istruzione nel testo delle notizie |
-| Latenza > 60 s | Timer del ciclo | Il ciclo orario tollera fino a 120 s; oltre → skip con log |
+| Latenza > 120 s | Timer del ciclo | A effort `high` le risposte durano in genere 10–60 s; timeout 120 s, poi skip con log e nessuna analisi per quest'ora |
 
 ## 4. Jev (decisore)
 
