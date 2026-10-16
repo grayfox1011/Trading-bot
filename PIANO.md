@@ -10,7 +10,7 @@
 1. **Cosa si costruisce.** Un bot Python con tre ruoli separati. **Claude Opus 5.5 è l'oracolo**: ogni ora, alla chiusura della candela 1h, produce un'analisi strutturata (scenari con probabilità, livelli chiave, caso long e caso short, invalidazioni, rischi) e **non decide**. **Jev (decision model di TypeSafe AI) è il decisore**: ogni 15 minuti riceve lo stato quantitativo etichettato più l'analisi dell'oracolo e decide azione, ingresso e uscita con probabilità calibrate. **Il codice** fa tutta la matematica (sizing, stop, limiti di rischio), esegue gli ordini e ha diritto di veto solo sulle regole di rischio.
 2. **Dove si opera.** Sui perpetual su azioni USA del dex HIP-3 `xyz` (trade.xyz) di Hyperliquid: `xyz:TSLA`, `xyz:NVDA`, `xyz:AAPL`, `xyz:MSFT`, `xyz:GOOGL`, `xyz:AMZN`, `xyz:META` (leva max 20x, cross margin, "growth mode" con fee ridotte) più `xyz:SP500`. Sono **perpetual sul prezzo dell'azione**, non azioni tokenizzate in senso stretto: nessun dividendo, nessuna proprietà del titolo. Collaterale: USDC.
 3. **Budget.** 100 € ≈ 110 USDC netti dopo i costi di on-ramp. Ordine minimo su Hyperliquid: 10 $ di nozionale. Si può operare con 1 posizione alla volta da 50–100 USDC di nozionale a leva effettiva ≤ 1x sul capitale (leva impostata 3x isolata solo per ridurre il margine bloccato).
-4. **Cadenza oraria: costi API sotto controllo.** Con una chiamata Opus 5.5 all'ora a effort `high` durante la sessione USA il costo è di circa **13–26 $/mese per simbolo** (40–77 $ per TSLA, NVDA e SP500), contro i ~166 $/mese che sarebbe costata la cadenza a 5 minuti 24/7 a effort basso; un piano Max 5x include 100 $/mese di crediti API che lo coprono per intero (§9). Jev costa **~0,2 $/mese** anche decidendo ogni 15 minuti. Il vero collo di bottiglia diventa la **validazione statistica**: a 1–2 trade al giorno servono mesi di paper per avere centinaia di trade, quindi la validazione principale è il **backtest sulle candele orarie storiche** (≈ 7 mesi disponibili dall'API, ≈ 20 $ di chiamate per un backtest completo).
+4. **Cadenza oraria e costi API.** Con una chiamata Opus 5.5 all'ora a effort `max` durante la sessione USA il costo è di circa **50–93 $/mese per simbolo** (151–280 $ per TSLA, NVDA e SP500 insieme). I crediti API inclusi in un piano Max coprono un simbolo (Max 5x, 100 $) o circa due (Max 20x, 200 $): con tre simboli la spesa mensile supera il capitale di trading, quindi universo iniziale e budget vanno decisi insieme (§9, §15). Jev costa **~0,2 $/mese** anche decidendo ogni 15 minuti. Il vero collo di bottiglia diventa la **validazione statistica**: a 1–2 trade al giorno servono mesi di paper per avere centinaia di trade, quindi la validazione principale è il **backtest sulle candele orarie storiche** (≈ 7 mesi disponibili dall'API, ≈ 20 $ di chiamate per un backtest completo).
 5. **Aspettative realistiche.** Nell'esperimento pubblico Alpha Arena (Nof1, ottobre–novembre 2025) sei LLM hanno fatto trading reale su Hyperliquid con 10.000 $ ciascuno, **su perpetual crypto** (BTC, ETH, SOL, BNB, DOGE, XRP) a leva 10–20x: Claude Sonnet 4.5 ha chiuso a −30,8 %, GPT‑5 a −62,7 %, solo Qwen3 Max ha guadagnato (+22,3 %; cifre finali riportate da fonti secondarie, non verificate sul sito di Nof1). Non esistono esperimenti pubblici equivalenti sui perps azionari, ma la lezione vale lo stesso: il problema era il metodo (previsioni direzionali frequenti, a leva, senza un edge misurato), non l'asset. Sulle azioni ci sono differenze da tenere presenti: il perp **insegue** l'oracolo del titolo reale (TSLA scambia ~28 M$/giorno su Hyperliquid contro decine di miliardi sul Nasdaq), la volatilità è più bassa, e ci sono gap, earnings e dati macro a orari fissi. Per questo la cadenza oraria con filtri di sessione è più adatta dei 5 minuti. In Alpha Arena decideva l'LLM stesso, in testo libero, ad ogni ciclo e con leva 10–20x; qui l'LLM non decide, Jev decide con probabilità tipizzate e il codice impone i limiti: questo rimuove due delle tre cause di quei risultati (decisioni incoerenti e over‑trading a leva alta). La terza, l'assenza di un vantaggio predittivo dimostrato, resta aperta e si misura con backtest e paper: Jev giudica solo ciò che gli viene passato, non ha dati di mercato propri e non c'è evidenza pubblica che preveda i prezzi da solo. Un LLM da solo non è un vantaggio statistico: il valore del progetto sta nella disciplina di rischio, nei costi bassi e nella misurazione. Con 100 € l'obiettivo sensato è **imparare e validare il sistema senza perdere più di 20–30 €**, non "guadagnare".
 6. **Jev è in early access** (waitlist su typesafe.ai). Il piano prevede un "surrogato" a regole con la stessa interfaccia, così lo sviluppo e il paper trading partono subito anche senza chiave Jev.
 7. **Orari.** I perps `xyz` scambiano 24/7 (verificato: candele e trade anche sabato e domenica), ma il prezzo esterno dell'azione arriva solo 24/5 (dom 20:05 → ven 20:00 ET). Fuori da quella finestra il prezzo è "interno" (order book + EMA 30 min) con bande di scoperta: il bot **non apre posizioni** nel weekend/festivi e chiude tutto prima del venerdì sera. Tra un'analisi oraria e l'altra, Jev decide ogni 15 minuti (ingressi e uscite) senza chiamare Opus.
@@ -28,7 +28,7 @@
 | Venue | Hyperliquid, dex HIP‑3 `xyz` (trade.xyz) | 98 % del volume HIP‑3, 133 mercati, oracolo Pyth, USDC, API unica HyperCore. |
 | Strumenti | Perps su TSLA, NVDA, AAPL, MSFT, GOOGL, AMZN, META, SP500 | Sono i mercati `xyz` a leva 20x–50x con cross margin abilitato e volumi giornalieri 10–140 M$. Le small cap `xyz` sono isolated‑only, 10x, poco liquide: escluse. |
 | Cadenza | Oracolo Opus **ogni ora** (chiusura candela 1h); decisioni Jev **ogni 15 minuti** sull'ultima analisi valida | Scelta dell'utente per le azioni: meno rumore, 6–7 analisi per sessione USA, costi API bassi; Jev costa quasi nulla e può decidere spesso. Candele 1h disponibili dall'API (≈ 7 mesi di storico per richiesta). |
-| Oracolo | Claude Opus 5.5 (`claude-opus-5-5`): ogni ora un'analisi JSON strutturata (scenari, livelli, caso long/short, invalidazioni), effort **`high`**; **non decide** | Richiesta dell'utente (effort `high` deciso il 10/10/2026: il livello che Anthropic indica come compromesso tipico fra qualità e consumo). Costo controllato con prompt caching; latenza tollerata dal ciclo orario. |
+| Oracolo | Claude Opus 5.5 (`claude-opus-5-5`): ogni ora un'analisi JSON strutturata (scenari, livelli, caso long/short, invalidazioni), effort **`max`**; **non decide** | Richiesta dell'utente (effort `max` deciso il 16/10/2026: correttezza prima del costo). Richiede streaming, `max_tokens` 64000 e timeout di alcuni minuti; costo mitigato dal prompt caching. |
 | Decisioni | Jev (`jev-1.13.0` pinnato) via `typesafe-sdk`: ogni 15 minuti decide azione, ingresso e uscita | Risposte tipizzate con probabilità e confidenza in 70–500 ms; 0,042 $/M token in input, output gratis. |
 | Esecuzione | `hyperliquid-python-sdk` 0.24.0 con `perp_dexs=["xyz"]` | Supporto nativo HIP‑3 (`xyz:TSLA` → asset id 110001). |
 | Modalità | `paper` (default) → `live` | Il live si attiva solo dopo i criteri di uscita della fase 4. |
@@ -87,7 +87,7 @@
 |---|---|
 | Modello | `claude-opus-5-5`, contesto 1 M, output fino a 128 k |
 | Prezzo | 4 $/M input, 20 $/M output, cache read 0,20 $/M (scrittura cache 1,25×) |
-| Thinking | Sempre attivo (adattivo); si controlla con `output_config.effort` (`low`…`max`, default `medium`). Per l'oracolo orario: **`high`** (scelta del 10/10/2026); `medium` o `low` restano come riduzione di costo, `xhigh`/`max` solo se il backtest mostra una calibrazione migliore (§9). |
+| Thinking | Sempre attivo (adattivo); si controlla con `output_config.effort` (`low`…`max`, default `medium`). Per l'oracolo orario: **`max`** (scelta del 16/10/2026); `high` resta il ripiego di costo se il backtest non mostra una calibrazione migliore a `max` (§9). |
 | Output strutturato | `client.messages.parse(..., output_format=ModelloPydantic)` oppure `output_config.format = json_schema` |
 | Caching | `cache_control` sul system prompt (stabile) → paga pieno solo lo stato di mercato variabile |
 | Fallback | In produzione aggiungere `fallbacks: "default"` con beta `server-side-fallback-2026-07-01` (gestione dei rari `stop_reason: "refusal"`) |
@@ -113,7 +113,7 @@
 ┌──────── LIVELLO 2: ORACOLO = CLAUDE OPUS 5.5 ───────────────────────────────────────┐
 │  Legge lo stato, ragiona, restituisce un'ANALISI JSON: scenari 4h con probabilità,  │
 │  bias, livelli chiave, caso long / caso short, invalidazioni, rischi, cosa cambierebbe│
-│  la lettura. NON decide, NON dimensiona. (effort high, cache, ~30 s, ~0,1 $)         │
+│  la lettura. NON decide, NON dimensiona. (effort max, cache, ~2 min, ~0,5 $)         │
 └───────────────┬──────────────────────────────────────────────────────────────────────┘
                 ▼  (ogni 15 minuti, finché l'analisi è valida)
 ┌──────── LIVELLO 3: DECISORE = JEV ───────────────────────────────────────────────────┐
@@ -139,7 +139,7 @@
 
 ## 4. I due cicli: oracolo ogni ora, decisione ogni 15 minuti
 
-### 4.1 Ciclo dell'oracolo (hh:00 + 5 s, solo nella finestra operativa; obiettivo < 60 s)
+### 4.1 Ciclo dell'oracolo (hh:00 + 5 s, solo nella finestra operativa; obiettivo < 5 min)
 
 | Passo | Cosa succede | Tempo | Costo |
 |---|---|---|---|
@@ -147,7 +147,7 @@
 | 1 | Riconcilia stato reale: `clearinghouseState(dex="xyz")`, `openOrders`, `userFills`. Se la posizione reale ≠ attesa → safe mode. | 1 s | peso 2–20 |
 | 2 | Dati: candele 1h (ultime 72), 4h (ultime 60), 15m (ultime 16), `l2Book`, `metaAndAssetCtxs`. | 2 s | peso ~60 |
 | 3 | Gate "hard": prezzo esterno attivo, sessione (preferenza 9:30–16:00 ET), nessun evento ±60 min, spread ≤ 3 bps, profondità ≥ 20× size, limiti di perdita non raggiunti. Se fallisce → nessuna chiamata a Opus, l'analisi precedente viene marcata non valida. | 0 s | 0 |
-| 4 | **Oracolo Opus 5.5** (§6): stato compatto → `AnalisiOracolo` JSON. Effort `high`, timeout 120 s, 2 retry. Analisi valida per 60 minuti o finché il prezzo non supera un livello di invalidazione. | 10–60 s | ~0,09–0,17 $ |
+| 4 | **Oracolo Opus 5.5** (§6): stato compatto → `AnalisiOracolo` JSON. Effort `max` in streaming (`max_tokens` 64000), timeout 300 s, 1 retry. Analisi valida per 60 minuti o finché il prezzo non supera un livello di invalidazione. | 1–5 min | ~0,33–0,61 $ |
 | 5 | Persistenza dell'analisi (con `usage`) e traduzione in etichette per il blocco `oracle` dello stato di Jev. Poi parte subito il ciclo di decisione. | 0,5 s | – |
 
 ### 4.2 Ciclo di decisione (hh:00, :15, :30, :45; obiettivo < 10 s)
@@ -156,7 +156,7 @@
 |---|---|---|---|
 | 1 | Riconcilia stato reale; nuovi fill → aggiorna posizione e P&L in R. | 1 s | peso 2–20 |
 | 2 | Dati leggeri: ultime candele 15m, `l2Book`, `allMids(dex="xyz")`; aggiorna le etichette quantitative. | 1 s | peso ~25 |
-| 3 | Gate "hard" (come sopra) + età dell'analisi: se non esiste un'analisi valida → **nessun nuovo ingresso** (le uscite vengono comunque valutate). | 0 s | 0 |
+| 3 | Gate "hard" (come sopra) + età dell'analisi: se non esiste un'analisi valida → **nessun nuovo ingresso** (le uscite vengono comunque valutate). Alle hh:00, se l'analisi nuova è ancora in corso (a `max` può richiedere minuti), si usa la precedente finché è valida. | 0 s | 0 |
 | 4 | **Decisore Jev** (§7): stato etichettato + blocco `oracle` + posizione → `action` ×3, `setup_quality`, `risk_ok`, `exit_now`, `oracle_consistent`, `regime`. | 0,5 s | ~0,0001 $ |
 | 5 | Policy (codice, §7.3): applica **solo** le soglie di confidenza di Jev e l'isteresi. Esito: `OPEN_LONG` / `OPEN_SHORT` / `CLOSE` / `HOLD` / `NOOP`. | 0 s | 0 |
 | 6 | Risk engine: size dal rischio per trade, stop = max(0,8 %, 1,5 × ATR 1h, invalidazione dell'oracolo), target 1,5 R, leva 3x isolata, nozionale ≥ 10 $ e multipli dei decimali. **Veto** se una regola di §5.2 non è rispettata. | 0 s | 0 |
@@ -286,16 +286,17 @@ client = anthropic.Anthropic()  # ANTHROPIC_API_KEY dall'ambiente
 SYSTEM = [{"type": "text", "text": SYSTEM_PROMPT,            # testo stabile
            "cache_control": {"type": "ephemeral"}}]           # cache → ~0,20 $/M invece di 4 $/M
 
-resp = client.messages.parse(
+with client.messages.stream(                # streaming obbligatorio: con max_tokens così alto l'SDK rifiuta la chiamata non-streaming
     model="claude-opus-5-5",
-    max_tokens=16000,                      # include il thinking adattivo (a effort high servono 4–8k token)
-    output_config={"effort": "high"},      # thinking sempre attivo su Opus 5.5: effort è la leva qualità/costo
+    max_tokens=64000,                       # include il thinking adattivo: a effort max può superare i 30k token
+    output_config={"effort": "max"},        # thinking sempre attivo su Opus 5.5: effort è la leva qualità/costo
     system=SYSTEM,
     messages=[{"role": "user", "content": stato_testo}],
-    output_format=AnalisiOracolo,
-)
-analisi = resp.parsed_output
-log(usage=resp.usage)   # input_tokens, cache_read_input_tokens, output_tokens → contatore costi
+    output_format=AnalisiOracolo,           # output strutturato anche in streaming (SDK anthropic ≥ 1.13)
+) as stream:
+    msg = stream.get_final_message()        # ParsedMessage, validato contro lo schema
+analisi = msg.parsed_output
+log(usage=msg.usage)    # input_tokens, cache_read_input_tokens, output_tokens → contatore costi
 ```
 Note operative: verifica che `cache_read_input_tokens > 0` dal secondo ciclo (se è 0 c'è qualcosa di variabile nel prefisso); un `stop_reason == "max_tokens"` o `"refusal"` → nessuna analisi valida per quest'ora (Jev non apre, può solo chiudere); in produzione abilita `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) per i rari refusal.
 
@@ -303,9 +304,9 @@ Note operative: verifica che `cache_read_input_tokens > 0` dal secondo ciclo (se
 Il codice converte l'analisi in etichette e aggiunge l'età: `"oracle": {"age": "fresh (12 minutes)", "bias": "bullish", "scenarios": "up 55%, range 30%, down 15%", "levels": "support 0.6% below, resistance 1.1% above", "long_case": "...", "short_case": "...", "invalidation": "long case fails 0.7% below; short case fails 1.0% above", "risk_flags": "none"}`. Se il prezzo supera un livello di invalidazione prima della scadenza, il blocco diventa `"status": "invalidated"` e Jev lo sa.
 
 ### 6.5 Controllo costi
-- Effort `high`, `max_tokens` 16000, stato compatto, system prompt in cache: ≈ 0,09–0,17 $/chiamata (4–8 k token di thinking e risposta: stima da verificare con `usage.output_tokens`), 7 chiamate per sessione USA per simbolo.
+- Effort `max`, streaming con `max_tokens` 64000, stato compatto, system prompt in cache: ≈ 0,33–0,61 $/chiamata (16–30 k token di thinking e risposta: stima da verificare con `usage.output_tokens`), 7 chiamate per sessione USA per simbolo.
 - Fuori finestra operativa il bot gira ma non chiama Opus.
-- Contatore mensile con soglia (default 80 $, entro i 100 $ di crediti API inclusi in un piano Max 5x: vedi §9) → oltre, passaggio automatico a `paper` + alert.
+- Contatore mensile con soglia proporzionata all'universo (default 100 $ con un simbolo, 250 $ con tre: vedi §9) → oltre, passaggio automatico a `paper` + alert.
 
 ---
 
@@ -444,7 +445,7 @@ Regole: arrotonda la size ai `szDecimals` dell'asset e il prezzo a 5 cifre signi
 
 ## 9. Costi stimati: configurazione scelta, alternative e crediti inclusi
 
-**Configurazione scelta (10/10/2026): oracolo Opus 5.5 ogni ora a effort `high`, decisioni Jev ogni 15 minuti**, sessione USA, tre simboli.
+**Configurazione scelta (16/10/2026): oracolo Opus 5.5 ogni ora a effort `max`, decisioni Jev ogni 15 minuti**, sessione USA; numero di simboli da decidere insieme al budget (sotto).
 
 Ipotesi per chiamata Opus: 2.000 token di system prompt in cache e 1.500 token di stato (≈ 0,006 $ di input) più i token di output, thinking incluso, a 20 $/M. La quantità di thinking per livello di effort non è documentata: le fasce sotto sono stime da verificare con `usage.output_tokens` nelle prime chiamate. Sessione USA = 7 analisi × 22 giorni.
 
@@ -452,9 +453,9 @@ Ipotesi per chiamata Opus: 2.000 token di system prompt in cache e 1.500 token d
 |---|---|---|---|---|---|
 | low | 700–1.500 | 0,02–0,04 | 3–6 $/mese | 9–17 | 32–58 |
 | medium | 2.000–4.000 | 0,05–0,09 | 7–13 | 21–40 | 73–137 |
-| **high (scelto)** | 4.000–8.000 | 0,09–0,17 | 13–26 | **40–77** | 137–264 |
+| high (ripiego) | 4.000–8.000 | 0,09–0,17 | 13–26 | 40–77 | 137–264 |
 | xhigh | 8.000–16.000 | 0,17–0,33 | 26–50 | 77–151 | 264–517 |
-| max | 16.000–30.000 | 0,33–0,61 | 50–93 | 151–280 | 517–961 |
+| **max (scelto)** | 16.000–30.000 | 0,33–0,61 | **50–93** | **151–280** | 517–961 |
 
 Altre voci:
 
@@ -464,14 +465,14 @@ Altre voci:
 | Variante ibrida: 1 chiamata `max` alle 10:00 ET che imposta la giornata + 6 `high` nelle ore successive, 3 simboli | ~56 |
 | Variante "ogni 4 ore a `max`" (2 analisi/giorno, 3 simboli): costa come l'orario `high` ma con analisi più vecchie e meno trade; scartata (§4) | 43–80 |
 | Opus 5.5 come "stratega" 1 volta/giorno (20 k in, 4 k out: rivede i log e propone modifiche ai parametri) | ~5 |
-| Backtest storico: 1.000 stati orari (≈ 7 mesi di sessione USA su 1 simbolo), 1 chiamata Opus + 1 Jev per stato | ~86 una tantum a `high` (~326 a `max`) |
+| Backtest storico: 1.000 stati orari (≈ 7 mesi di sessione USA su 1 simbolo), 1 chiamata Opus + 1 Jev per stato | ~326 una tantum a `max` (~86 a `high`); riducibile a 300–400 stati su un simbolo (~100–130 $) |
 | Per confronto: la cadenza iniziale a 5 minuti 24/7 con Opus a `low` | ~166 |
 | VPS (Hetzner CX22 o simile) | ~4 |
 | Hyperliquid: deposito/prelievo | ~1–3 una tantum |
 
-**Crediti API inclusi nei piani Max (verificato il 10/10/2026 sulla documentazione Anthropic).** Max 5x include 100 $ al mese di crediti per l'API, Max 20x 200 $. Si richiedono dopo 7 giorni di abbonamento collegando un'organizzazione Console al piano; coprono API, Agent SDK e Managed Agents alle tariffe standard (non Claude Code interattivo); scadono a fine ciclo senza accumulo; quando finiscono, le richieste API si fermano salvo acquisto di crediti o auto‑ricarica, e non vengono mai addebitate al piano. Con la configurazione scelta (40–77 $/mese) un Max 5x copre l'oracolo per intero; il backtest a `high` (~86 $) conviene farlo nel mese precedente il live. Accorgimenti: un workspace Console dedicato al bot con limite di spesa, e gestione dell'errore "credit balance is too low" come assenza di analisi (nessun nuovo ingresso, alert: vedi pre‑mortem). Il piano Pro non include crediti. Far girare il bot con il login dell'abbonamento al posto della chiave API è sconsigliato: la pagina legale di Claude Code riserva l'OAuth all'uso ordinario di Claude Code e indica le chiavi API per chi costruisce prodotti, e si perderebbero output strutturato, controllo della cache e dell'effort.
+**Crediti API inclusi nei piani Max (verificato il 10/10/2026 sulla documentazione Anthropic).** Max 5x include 100 $ al mese di crediti per l'API, Max 20x 200 $. Si richiedono dopo 7 giorni di abbonamento collegando un'organizzazione Console al piano; coprono API, Agent SDK e Managed Agents alle tariffe standard (non Claude Code interattivo); scadono a fine ciclo senza accumulo; quando finiscono, le richieste API si fermano salvo acquisto di crediti o auto‑ricarica, e non vengono mai addebitate al piano. Con la configurazione scelta a `max`, un Max 5x (100 $) copre un solo simbolo (50–93 $/mese) e un Max 20x (200 $) circa due; con tre simboli (151–280 $/mese) servono crediti acquistati o auto‑ricarica, e la spesa mensile supera il capitale di trading. Il backtest a `max` (~326 $ per 1.000 stati) conviene ridurlo a 300–400 stati su un simbolo (~100–130 $), oppure farlo a `high` e verificare a `max` su 50 stati. Accorgimenti: un workspace Console dedicato al bot con limite di spesa, e gestione dell'errore "credit balance is too low" come assenza di analisi (nessun nuovo ingresso, alert: vedi pre‑mortem). Il piano Pro non include crediti. Far girare il bot con il login dell'abbonamento al posto della chiave API è sconsigliato: la pagina legale di Claude Code riserva l'OAuth all'uso ordinario di Claude Code e indica le chiavi API per chi costruisce prodotti, e si perderebbero output strutturato, controllo della cache e dell'effort.
 
-**Budget di sicurezza:** contatore mensile con soglia 80 $ (configurabile): oltre, il bot torna in `paper` e avvisa. Lo schema "Opus stratega giornaliero + modello leggero per i segnali" (quello dell'articolo "Opus 5.5 + Jev") resta una variante attivabile cambiando il parametro `signals.model`.
+**Budget di sicurezza:** contatore mensile con soglia proporzionata all'universo, 100 $ con un simbolo e 250 $ con tre (configurabile): oltre, il bot torna in `paper` e avvisa. Lo schema "Opus stratega giornaliero + modello leggero per i segnali" (quello dell'articolo "Opus 5.5 + Jev") resta una variante attivabile cambiando il parametro `signals.model`.
 
 ---
 
@@ -481,7 +482,7 @@ Altre voci:
 |---|---|---|---|
 | **0. Setup** | 1–2 giorni | Wallet dedicato, USDC su Arbitrum, deposito 20 USDC su mainnet (il resto arriva alla fase 5; il deposito sblocca anche il faucet del testnet, che dà 1.000 USDC finti solo a un indirizzo che ha già depositato su mainnet), API wallet, unified account, chiave API Anthropic (organizzazione Console collegata ai crediti del piano Max se presente, workspace dedicato con limite di spesa), waitlist Jev, VPS/Docker, Telegram bot, repo con `.env.example` | Tutte le chiavi in `.env`, `python -m bot.healthcheck` verde (legge saldo, meta `xyz`, candele; Claude e Jev/surrogato rispondono) |
 | **1. Dati e paper engine** | Settimana 1 | `data/`, `features/`, `state/`, `storage/`, `execution/paper.py`, scarico dello storico (candele 1h: 5.000 per richiesta ≈ 7 mesi, da marzo 2026; 15m ≈ 52 giorni; 4h tutto lo storico) e raccolta continua su SQLite, script `replay.py` | ≈ 7 mesi di storico 1h salvati per l'universo; replay deterministico; test unitari su feature e size |
-| **2. Oracolo Claude** | Settimana 1–2 | Prompt di sistema, schema `AnalisiOracolo`, traduzione in etichette, cache verificata, contatore costi, eval su 200 stati registrati: coerenza (stesso stato → stessa analisi ≥ 90 %), calibrazione degli scenari (Brier score contro l'esito a 4 h), costo medio | Costo medio ≤ 0,20 $/chiamata a effort `high` (misurare anche `medium` e `xhigh` sugli stessi 50 stati), cache hit ≥ 90 %, nessun errore di schema, scenari meglio calibrati di un prior fisso |
+| **2. Oracolo Claude** | Settimana 1–2 | Prompt di sistema, schema `AnalisiOracolo`, traduzione in etichette, cache verificata, contatore costi, eval su 200 stati registrati: coerenza (stesso stato → stessa analisi ≥ 90 %), calibrazione degli scenari (Brier score contro l'esito a 4 h), costo medio | Costo medio ≤ 0,65 $/chiamata a effort `max` (misurare anche `high` e `xhigh` sugli stessi 50 stati: se la calibrazione non migliora, tornare a `high`), cache hit ≥ 90 %, nessun errore di schema, scenari meglio calibrati di un prior fisso |
 | **3. Decisioni Jev** | Settimana 2 | `decision/surrogate.py`, `decision/jev_decider.py`, `decision/policy.py`, ciclo a 15 minuti, test di stabilità (ordine opzioni, bucket), log del `model` | Accordo delle 3 domande `action` ≥ 85 %; distribuzione di confidenza sensata; replay con surrogato e (se disponibile) Jev |
 | **4. Rischio, backtest ed esecuzione in paper** | Settimane 2–5 | `risk/engine.py`, kill‑switch, calendario eventi; **backtest storico** su ≥ 1.000 stati orari (stati costruiti solo con dati fino alla candela chiusa, prezzi normalizzati e senza date, per limitare look‑ahead e "memoria" del modello sul periodo); esecutore live provato su **testnet** (dex principale, es. BTC) per la meccanica ordini/trigger; **paper trading su dati mainnet ≥ 3 settimane** | Backtest: ≥ 150 trade simulati, profit factor netto ≥ 1,2, max DD ≤ 10 %, meglio di tutte e tre le baseline di §12; paper: 20–40 trade coerenti col backtest; costo API entro budget; zero incidenti di riconciliazione |
 | **5. Live progressivo** | Dalla settimana 6 | Live con 20–30 USDC per 1–2 settimane (size minima 10–15 $); poi 100 USDC se le metriche live sono in linea con il paper (slippage reale ≤ 2× stimato) | Metriche live ≈ paper; nessun errore di esecuzione |
@@ -559,13 +560,13 @@ Stack: Python 3.11+, SQLite (basta e si copia con un `scp`), APScheduler o loop 
 
 ## 15. Decisioni prese e decisioni ancora aperte
 
-**Prese (10/10/2026):** strumenti = perps su azioni USA del dex `xyz` (non crypto); oracolo Opus 5.5 **ogni ora a effort `high`**; **Jev decide ogni 15 minuti** e l'oracolo non decide; codice con veto solo sul rischio; feed JSON costruito dal codice (§4.3); domande a Jev fisse e versionate (`config/questions_v1.yaml`); test di esecuzione sul testnet Hyperliquid, validazione della strategia con backtest storico e paper su dati mainnet.
+**Prese (10–16/10/2026):** strumenti = perps su azioni USA del dex `xyz` (non crypto); oracolo Opus 5.5 **ogni ora a effort `max`** (streaming, `max_tokens` 64000); **Jev decide ogni 15 minuti** e l'oracolo non decide; codice con veto solo sul rischio; feed JSON costruito dal codice (§4.3); domande a Jev fisse e versionate (`config/questions_v1.yaml`); test di esecuzione sul testnet Hyperliquid, validazione della strategia con backtest storico e paper su dati mainnet.
 
 **Aperte, prima della fase 2:**
 
-1. **Copertura oraria di Opus:** solo sessione USA regolare (40–77 $/mese a `high`, consigliato) oppure tutto il 24/5 con pre/post/overnight (137–264 $/mese, liquidità 7–8× più bassa)?
-2. **Budget API mensile massimo** oltre il quale il bot torna in paper (proposta: 80 $, entro i crediti di un Max 5x).
-3. **Universo iniziale:** TSLA + NVDA + SP500 (proposta) oppure tutte le 8 blue chip (104–208 $/mese a `high`)?
+1. **Copertura oraria di Opus:** solo sessione USA regolare (consigliato: 50–93 $/mese per simbolo a `max`) oppure tutto il 24/5 con pre/post/overnight (517–961 $/mese con tre simboli, liquidità 7–8× più bassa: sconsigliato)?
+2. **Budget API mensile massimo** oltre il quale il bot torna in paper (proposta: 100 $ con un simbolo, coperti dai crediti di un Max 5x; 250 $ con tre simboli).
+3. **Universo iniziale:** a `max` ogni simbolo costa 50–93 $/mese. Un solo simbolo (TSLA o NVDA) rientra nei crediti di un Max 5x; TSLA + NVDA + SP500 costano 151–280 $/mese; le 8 blue chip 400–745 $/mese (fuori scala). Quale?
 4. **Modalità account Hyperliquid:** unified account (proposta) o standard con trasferimenti espliciti?
 5. **Ospitare il bot:** VPS (~4 €/mese) o macchina di casa (Raspberry/PC sempre acceso)?
 6. **Jev:** hai già accesso early access o partiamo con il surrogato e aggiungiamo Jev quando arriva la chiave?

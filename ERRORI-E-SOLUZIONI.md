@@ -60,8 +60,8 @@
 
 | Errore previsto | Rilevazione | Prevenzione / reazione |
 |---|---|---|
-| Timeout, 529 "overloaded", 429 | Eccezioni `APITimeoutError`, `InternalServerError`, `RateLimitError` | Timeout 60 s, 2 retry con backoff; poi nessuna analisi valida → nessun nuovo ingresso; le posizioni restano gestite da trigger on‑chain e dalle decisioni di uscita di Jev |
-| Output troncato | `stop_reason == "max_tokens"` (il thinking ha consumato il budget) | `max_tokens` 16000 con effort `high`; un retry a 32000 in streaming (`messages.stream` con output strutturato in `output_config.format`); se ricorre, rivedere il prompt |
+| Timeout, 529 "overloaded", 429 | Eccezioni `APITimeoutError`, `InternalServerError`, `RateLimitError` | Timeout 300 s (streaming), 1 retry con backoff; poi nessuna analisi valida → nessun nuovo ingresso; le posizioni restano gestite da trigger on‑chain e dalle decisioni di uscita di Jev |
+| Output troncato | `stop_reason == "max_tokens"` (il thinking ha consumato il budget) | `max_tokens` 64000 in streaming con effort `max` (`messages.stream` + `output_format`); un retry a 128000; se ricorre, rivedere il prompt |
 | Refusal | `stop_reason == "refusal"` | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`); se anche il fallback rifiuta → nessuna analisi valida per quest'ora |
 | JSON non valido o fuori schema | `messages.parse` solleva un errore di validazione | Nessuna analisi valida (Jev può solo chiudere), testo grezzo nel log, contatore; 3 errori consecutivi → alert "prompt rotto" |
 | Analisi che cambia lettura ogni ora | Bias e scenari che oscillano | L'oracolo non decide: Jev vede l'analisi come un campo dello stato, con la sua età, accanto ai dati quantitativi; invertire una posizione richiede due decisioni Jev concordi a 15 minuti di distanza (isteresi nel codice); il cooldown dopo una perdita evita il ping‑pong |
@@ -71,7 +71,7 @@
 | Modello deprecato o id errato | HTTP 404 `NotFoundError` | Il modello è un parametro di config; nessun nuovo ingresso + alert |
 | "Memoria" del periodo nel backtest | Risultati storici troppo belli | Stati senza date né prezzi assoluti (rendimenti e distanze relative), split train/test per mese |
 | Prompt injection | Non applicabile nella v1 (stato generato dal codice da numeri) | Se in v2 entrano notizie: filtro di rilevanza con Jev, troncamento, nessuna istruzione nel testo delle notizie |
-| Latenza > 120 s | Timer del ciclo | A effort `high` le risposte durano in genere 10–60 s; timeout 120 s, poi skip con log e nessuna analisi per quest'ora |
+| Latenza > 300 s | Timer del ciclo | A effort `max` le risposte possono durare 1–5 minuti; timeout 300 s, poi skip con log e nessuna analisi per quest'ora; la decisione delle hh:00 usa l'analisi precedente finché è valida |
 
 ## 4. Jev (decisore)
 
